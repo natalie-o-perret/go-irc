@@ -6,3 +6,6 @@ coverage.out
 ircd.toml.local
 ircb.toml.local
 
+# JetBrains IDEs
+.idea/
+
