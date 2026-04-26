@@ -6,4 +6,3 @@ import "golang.org/x/crypto/bcrypt"
 func bcryptCheck(hash, password []byte) bool {
 	return bcrypt.CompareHashAndPassword(hash, password) == nil
 }
-

@@ -39,4 +39,3 @@
 // internal/ringbuf: Generic, thread-safe, fixed-capacity circular buffer used
 // by the history subsystem.
 package goirc
-

@@ -16,10 +16,10 @@ import (
 type Pack struct {
 	Number      int
 	Filename    string
-	Size        int64   // bytes; -1 if unknown
-	Gets        int     // total downloads
-	CRC32       uint32  // optional checksum
-	Description string  // optional human-readable description
+	Size        int64  // bytes; -1 if unknown
+	Gets        int    // total downloads
+	CRC32       uint32 // optional checksum
+	Description string // optional human-readable description
 }
 
 // PackList is a list of XDCC packs.
@@ -225,4 +225,3 @@ func formatSize(size int64) string {
 		return fmt.Sprintf("%dB", size)
 	}
 }
-

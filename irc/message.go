@@ -269,4 +269,3 @@ var tagUnescaper = strings.NewReplacer(
 
 func escapeTagValue(s string) string   { return tagEscaper.Replace(s) }
 func unescapeTagValue(s string) string { return tagUnescaper.Replace(s) }
-

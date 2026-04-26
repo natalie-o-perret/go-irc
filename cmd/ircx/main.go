@@ -175,4 +175,3 @@ func splitWords(s string) []string {
 	}
 	return words
 }
-

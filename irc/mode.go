@@ -84,4 +84,3 @@ func FormatModeChanges(changes []ModeChange) (modeStr string, args []string) {
 	}
 	return sb.String(), args
 }
-

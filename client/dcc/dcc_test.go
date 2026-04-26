@@ -71,4 +71,3 @@ func TestParseSendRequestPassive(t *testing.T) {
 		t.Errorf("token: got %d want 42", req.Token)
 	}
 }
-

@@ -112,4 +112,3 @@ func (m *MemoryStore) Query(network, target string, q Query) ([]*Entry, error) {
 
 // Close is a no-op for the memory store.
 func (m *MemoryStore) Close() error { return nil }
-

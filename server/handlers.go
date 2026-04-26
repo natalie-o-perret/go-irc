@@ -1350,4 +1350,3 @@ func checkBcrypt(hash, password string) bool {
 
 // timeNow is a substitutable clock for tests.
 var timeNow = func() time.Time { return time.Now() }
-

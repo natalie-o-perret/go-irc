@@ -77,15 +77,15 @@ const (
 
 // SCRAM implements SCRAM-SHA-256 or SCRAM-SHA-512 (RFC 5802).
 type SCRAM struct {
-	username  string
-	password  string
-	hashNew   func() hash.Hash
-	hashName  string
-	keyLen    int
-	state     scramState
+	username    string
+	password    string
+	hashNew     func() hash.Hash
+	hashName    string
+	keyLen      int
+	state       scramState
 	clientNonce string
 	clientFirst string
-	serverSig []byte
+	serverSig   []byte
 }
 
 // NewScramSHA256 creates a SCRAM-SHA-256 mechanism.
@@ -226,4 +226,3 @@ func xorBytes(a, b []byte) []byte {
 func parseCSV(s string) []string {
 	return strings.Split(s, ",")
 }
-

@@ -40,4 +40,3 @@ func TestExternal(t *testing.T) {
 		t.Errorf("EXTERNAL response should be empty, got %q", resp)
 	}
 }
-

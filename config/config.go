@@ -147,4 +147,3 @@ func (c *Config) applyDefaults() {
 		}
 	}
 }
-

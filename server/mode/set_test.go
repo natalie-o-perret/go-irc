@@ -66,4 +66,3 @@ func TestFormatModeChanges(t *testing.T) {
 		t.Errorf("expected 2 args, got %d: %v", len(args), args)
 	}
 }
-

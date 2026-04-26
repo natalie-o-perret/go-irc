@@ -2,26 +2,23 @@
 
 A high-quality, feature-complete IRC implementation in Go.
 
-> Full IRC protocol client & server library — IRC bouncer — XDCC file transfers
-> — IRCv3 — pure Go — no CGo.
-
----
+> Full IRC protocol client & server library - IRC bouncer - XDCC file transfers - IRCv3 - pure Go - no CGo.
 
 ## Features
 
-| Layer | What you get |
-|-------|-------------|
-| **`irc/`** | RFC 1459 + RFC 2812 message parsing/formatting, IRCv3 message tags, mode change parsing |
-| **`client/`** | Full IRC client with IRCv3 CAP negotiation, SASL (PLAIN / EXTERNAL / SCRAM-SHA-256 / SCRAM-SHA-512) |
-| **`client/dcc/`** | DCC SEND / RECV with 4-byte ACKs, resume, passive DCC (port 0 + token) |
-| **`client/xdcc/`** | XDCC pack list parsing (iroffer/SysReset formats), `XDCC SEND #n`, bot pack serving |
-| **`client/sasl/`** | SASL PLAIN, EXTERNAL, SCRAM-SHA-256, SCRAM-SHA-512 |
-| **`server/`** | Full ircd: channel modes, user modes, WHOIS/WHO/WHOWAS, OPER/KILL, WALLOPS, IRCv3 |
-| **`server/mode/`** | Channel and user mode set management with list modes (+b/+e/+I) |
-| **`bouncer/`** | Multi-upstream multi-downstream IRC bouncer with history replay and cap bridging |
-| **`bouncer/history/`** | In-memory (ring-buffer) history store, queryable by time window |
-| **`config/`** | TOML config loading with validation and defaults |
-| **`internal/ringbuf/`** | Generic thread-safe ring buffer |
+| Layer                   | What you get                                                                                        |
+|-------------------------|-----------------------------------------------------------------------------------------------------|
+| **`irc/`**              | RFC 1459 + RFC 2812 message parsing/formatting, IRCv3 message tags, mode change parsing             |
+| **`client/`**           | Full IRC client with IRCv3 CAP negotiation, SASL (PLAIN / EXTERNAL / SCRAM-SHA-256 / SCRAM-SHA-512) |
+| **`client/dcc/`**       | DCC SEND / RECV with 4-byte ACKs, resume, passive DCC (port 0 + token)                              |
+| **`client/xdcc/`**      | XDCC pack list parsing (iroffer/SysReset formats), `XDCC SEND #n`, bot pack serving                 |
+| **`client/sasl/`**      | SASL PLAIN, EXTERNAL, SCRAM-SHA-256, SCRAM-SHA-512                                                  |
+| **`server/`**           | Full ircd: channel modes, user modes, WHOIS/WHO/WHOWAS, OPER/KILL, WALLOPS, IRCv3                   |
+| **`server/mode/`**      | Channel and user mode set management with list modes (+b/+e/+I)                                     |
+| **`bouncer/`**          | Multi-upstream multi-downstream IRC bouncer with history replay and cap bridging                    |
+| **`bouncer/history/`**  | In-memory (ring-buffer) history store, queryable by time window                                     |
+| **`config/`**           | TOML config loading with validation and defaults                                                    |
+| **`internal/ringbuf/`** | Generic thread-safe ring buffer                                                                     |
 
 ### IRCv3 capabilities supported
 
@@ -30,22 +27,47 @@ A high-quality, feature-complete IRC implementation in Go.
 `account-tag` · `cap-notify` · `userhost-in-names` · `invite-notify` ·
 `account-notify` · `sasl`
 
----
+## Comparison with existing frameworks
+
+This project combines protocol primitives, client, server, bouncer, and XDCC tooling in one repository. The table below shows how `go-irc` stacks up against the most commonly used Go IRC libraries and tools.
+
+| Project | Protocol parsing | IRC client | IRC server | Bouncer | DCC / XDCC | SASL | IRCv3 caps | Pure Go |
+|---|---|---|---|---|---|---|---|---|
+| **go-irc** (this repo) | yes | yes | yes | yes | yes | PLAIN, EXTERNAL, SCRAM-SHA-256/512 | 16+ | yes |
+| [`go-ircevent`](https://github.com/thoj/go-ircevent) | partial | yes | no | no | no | no | limited | yes |
+| [`girc`](https://github.com/lrstanley/girc) | yes | yes | no | no | no | PLAIN | moderate | yes |
+| [`Ergo (ergo)`](https://github.com/ergochat/ergo) | yes | no | yes (production) | no | no | several | extensive | yes |
+| [`soju`](https://codeberg.org/emersion/soju) | yes | no | no | yes (production) | no | several | extensive | yes |
+| [`ZNC`](https://znc.in) | yes | no | no | yes (production) | no | several | limited | no (C++) |
+
+### Notes on each alternative
+
+**[`go-ircevent`](https://github.com/thoj/go-ircevent)** is a well-known event-driven IRC client. It offers a simple callback-based API and handles basic IRC connection management, but has no server, bouncer, DCC transfer, or SASL support beyond the basics.
+
+**[`girc`](https://github.com/lrstanley/girc)** is a modern, ergonomic IRC client library with a focus on extensibility and clean API design. It handles IRCv3 CAP negotiation and some SASL mechanisms, but is limited to the client layer. There is no server, bouncer, or file-transfer support.
+
+**[Ergo (`ergochat/ergo`)](https://github.com/ergochat/ergo)** is a production-grade IRC server implementing many modern IRCv3 extensions and targeting real-world deployments. It is a server binary rather than a reusable library, so embedding or extending it requires more effort. It has no client or DCC/XDCC components.
+
+**[`soju`](https://codeberg.org/emersion/soju)** is a production IRC bouncer written in Go, maintained by the IRCv3 working group contributors. It is feature-rich and battle-tested as a standalone service but is not designed to be embedded as a library. It has no IRC server or file-transfer support.
+
+**[ZNC](https://znc.in)** is the most widely deployed IRC bouncer. It is written in C++ and highly extensible through a module system. `go-irc` trades the ecosystem maturity of ZNC for a pure-Go embeddable bouncer you can use directly in your application.
+
+If you only need one layer, a specialized project is often the best fit. If you want one Go module that spans the full IRC stack (protocol primitives, client, server, bouncer, DCC/XDCC), `go-irc` is designed for that use case.
 
 ## Binaries
 
-| Binary | Description |
-|--------|-------------|
-| `cmd/ircd` | Standalone IRC server |
+| Binary     | Description                  |
+|------------|------------------------------|
+| `cmd/ircd` | Standalone IRC server        |
 | `cmd/ircb` | IRC bouncer (ZNC/soju-style) |
-| `cmd/ircx` | XDCC downloader CLI |
+| `cmd/ircx` | XDCC downloader CLI          |
 
 ### Build
 
 ```bash
-go build ./cmd/ircd   # → ./ircd
-go build ./cmd/ircb   # → ./ircb
-go build ./cmd/ircx   # → ./ircx
+go build ./cmd/ircd   # -> ./ircd
+go build ./cmd/ircb   # -> ./ircb
+go build ./cmd/ircx   # -> ./ircx
 ```
 
 ### Quick-start: ircd
@@ -76,6 +98,7 @@ password = "$2a$10$..."   # bcrypt hash of your oper password
 ```
 
 Clients connect with:
+
 ```
 /server localhost 6668
 /pass myuser/libera:mypassword
@@ -116,8 +139,6 @@ limit   = 500
 ./ircx -server irc.rizon.net:6667 -nick mynick \
        -bot "XDCC_Bot" -list
 ```
-
----
 
 ## Library usage
 
@@ -210,8 +231,6 @@ srv := server.New(server.Config{
 log.Fatal(srv.ListenAndServe())
 ```
 
----
-
 ## Architecture
 
 ```
@@ -239,9 +258,9 @@ go-irc/
                 ┌─────────────────────────────┐
                 │          Bouncer             │
                 │                             │
-  IRC client ──▶│  DownstreamSession          │
-  IRC client ──▶│  DownstreamSession   ──────▶│  UpstreamSession ──▶ libera.chat
-  IRC client ──▶│  DownstreamSession          │    (client.Client)
+  IRC client -->│  DownstreamSession          │
+  IRC client -->│  DownstreamSession   ------->  UpstreamSession --> libera.chat
+  IRC client -->│  DownstreamSession          │    (client.Client)
                 │                             │
                 │  history.Store (memory)     │
                 └─────────────────────────────┘
@@ -252,19 +271,14 @@ go-irc/
 - New downstreams receive an instant channel state replay (JOIN + NAMES + TOPIC) plus the last 50 messages per channel
 - IRCv3 `server-time` tags are added to replayed messages
 
----
-
 ## Dependencies
 
-| Package | Purpose |
-|---------|---------|
-| `github.com/BurntSushi/toml` | TOML config parsing |
-| `golang.org/x/crypto` | bcrypt (oper passwords) + PBKDF2 (SCRAM SASL) |
-| `modernc.org/sqlite` | Optional SQLite history backend (pure Go, no CGo) |
-
----
+| Package                      | Purpose                                           |
+|------------------------------|---------------------------------------------------|
+| `github.com/BurntSushi/toml` | TOML config parsing                               |
+| `golang.org/x/crypto`        | bcrypt (oper passwords) + PBKDF2 (SCRAM SASL)     |
+| `modernc.org/sqlite`         | Optional SQLite history backend (pure Go, no CGo) |
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
-
+MIT - see [LICENSE](LICENSE).

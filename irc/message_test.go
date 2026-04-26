@@ -122,4 +122,3 @@ func TestParseModeString(t *testing.T) {
 		t.Errorf("change[2] wrong: %+v", changes[2])
 	}
 }
-

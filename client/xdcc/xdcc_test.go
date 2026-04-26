@@ -68,4 +68,3 @@ func TestFormatPackSize(t *testing.T) {
 		}
 	}
 }
-

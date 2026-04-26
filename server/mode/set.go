@@ -226,4 +226,3 @@ func (UserValidator) Type(m rune) ModeType {
 func (UserValidator) ValidateArg(_ rune, _ bool, arg string) (string, error) {
 	return arg, nil
 }
-

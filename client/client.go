@@ -490,4 +490,3 @@ func (c *Client) capWantList() []string {
 	}
 	return want
 }
-

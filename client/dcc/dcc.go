@@ -45,15 +45,15 @@ func (s TransferState) String() string {
 
 // Session represents a single DCC file transfer session.
 type Session struct {
-	ID           uint32
-	Filename     string // cleaned base filename
-	Size         int64  // -1 if unknown
-	Transferred  atomic.Int64
-	State        atomic.Int32 // TransferState
-	Passive      bool         // passive DCC (bot dials us)
-	Token        uint32       // passive DCC token
-	Resume       int64        // byte offset to resume from
-	Err          error        // set on failure
+	ID          uint32
+	Filename    string // cleaned base filename
+	Size        int64  // -1 if unknown
+	Transferred atomic.Int64
+	State       atomic.Int32 // TransferState
+	Passive     bool         // passive DCC (bot dials us)
+	Token       uint32       // passive DCC token
+	Resume      int64        // byte offset to resume from
+	Err         error        // set on failure
 
 	conn   net.Conn
 	mu     sync.Mutex
@@ -457,4 +457,3 @@ func ipToUint32(ip net.IP) uint32 {
 	}
 	return binary.BigEndian.Uint32(ip4)
 }
-

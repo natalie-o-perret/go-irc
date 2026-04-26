@@ -109,4 +109,3 @@ func TestClientJoinAndPrivmsg(t *testing.T) {
 	c1.Disconnect("")
 	c2.Disconnect("")
 }
-

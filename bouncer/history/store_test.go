@@ -70,4 +70,3 @@ func TestMemoryStoreRingOverwrite(t *testing.T) {
 		t.Errorf("expected 3 entries (ring size), got %d", len(entries))
 	}
 }
-

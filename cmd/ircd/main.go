@@ -89,4 +89,3 @@ func runWithDefaults() {
 		os.Exit(1)
 	}
 }
-

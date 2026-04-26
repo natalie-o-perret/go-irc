@@ -69,4 +69,3 @@ func TestLen(t *testing.T) {
 		t.Errorf("after 2 pushes: got %d want 2", r.Len())
 	}
 }
-

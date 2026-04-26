@@ -25,9 +25,9 @@ import (
 type SessionState int
 
 const (
-	StatePreReg  SessionState = iota // NICK/USER not yet received
-	StateCapNeg                      // CAP negotiation in progress
-	StateRegistered                  // fully registered (001 sent)
+	StatePreReg     SessionState = iota // NICK/USER not yet received
+	StateCapNeg                         // CAP negotiation in progress
+	StateRegistered                     // fully registered (001 sent)
 )
 
 // Membership represents a user's presence in a channel with a prefix.
@@ -201,12 +201,12 @@ func (r *Registry) All() []*Session {
 
 // Channel represents an IRC channel.
 type Channel struct {
-	name        string
-	topic       string
-	topicSetBy  string
-	topicSetAt  time.Time
-	modes       *mode.Set
-	createdAt   time.Time
+	name       string
+	topic      string
+	topicSetBy string
+	topicSetAt time.Time
+	modes      *mode.Set
+	createdAt  time.Time
 
 	mu      sync.RWMutex
 	members map[string]*Membership // lowercase nick -> Membership
@@ -648,4 +648,3 @@ func (srv *Server) supportedCaps() map[string]string {
 func serverTime() string {
 	return time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 }
-

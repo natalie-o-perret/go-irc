@@ -81,4 +81,3 @@ func (r *RingBuf[T]) ForEach(fn func(T) bool) {
 		}
 	}
 }
-

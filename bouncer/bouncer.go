@@ -54,7 +54,6 @@ type NetworkConfig struct {
 	AutoConnect bool
 }
 
-
 // HistoryConfig controls message history storage.
 type HistoryConfig struct {
 	// Backend: "memory" or "sqlite"
@@ -78,14 +77,15 @@ type Config struct {
 	// History controls message history.
 	History HistoryConfig
 }
+
 // ---------------------------------------------------------------------------
 
 // ChannelState tracks live channel state for replay.
 type ChannelState struct {
-	Topic     string
-	TopicBy   string
-	TopicAt   time.Time
-	Members   map[string]string // nick -> prefix
+	Topic   string
+	TopicBy string
+	TopicAt time.Time
+	Members map[string]string // nick -> prefix
 }
 
 // NetworkState tracks the upstream session state.
@@ -647,4 +647,3 @@ func parseBouncerPass(pass string) (user, network, password string) {
 	user = pass
 	return
 }
-
