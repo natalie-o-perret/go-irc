@@ -1,5 +1,10 @@
 # go-irc
 
+[![CI](https://github.com/natalie-o-perret/go-irc/actions/workflows/ci.yml/badge.svg)](https://github.com/natalie-o-perret/go-irc/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/natalie-o-perret/go-irc.svg)](https://pkg.go.dev/github.com/natalie-o-perret/go-irc)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Contributing](https://img.shields.io/badge/contributing-guide-blue)](CONTRIBUTING.md)
+
 A high-quality, feature-complete IRC implementation in Go.
 
 > Full IRC protocol client & server library - IRC bouncer - XDCC file transfers - IRCv3 - pure Go - no CGo.
