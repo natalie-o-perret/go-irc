@@ -1,10 +1,10 @@
 name: ci - lint - files - *.json
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
     paths: [ "**/*.json", "**/*.jsonc" ]
   pull_request:
-    branches: [ main ]
+    branches: [ master ]
     paths: [ "**/*.json", "**/*.jsonc" ]
 jobs:
   json-lint:
