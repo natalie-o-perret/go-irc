@@ -1,5 +1,4 @@
-// Command ircb is an IRC bouncer that multiplexes upstream connections to
-// multiple downstream clients with message history and playback.
+// Command ircb is an IRC bouncer.
 //
 // Usage:
 //
@@ -16,9 +15,22 @@ import (
 	"github.com/natalie-o-perret/go-irc/config"
 )
 
+// Build-time variables injected by goreleaser / go build -ldflags.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	cfgPath := flag.String("config", "ircb.toml", "Path to TOML config file")
+	showVer := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if *showVer {
+		fmt.Printf("ircb %s (%s) built %s\n", version, commit, date)
+		return
+	}
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
@@ -64,7 +76,7 @@ func main() {
 		},
 	})
 
-	slog.Info("starting ircb bouncer", "listen", bc.Listen)
+	slog.Info("starting ircb bouncer", "version", version, "listen", bc.Listen)
 	if err := b.ListenAndServe(); err != nil {
 		fmt.Fprintf(os.Stderr, "ircb: %v\n", err)
 		os.Exit(1)

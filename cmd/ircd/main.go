@@ -15,9 +15,22 @@ import (
 	"github.com/natalie-o-perret/go-irc/server"
 )
 
+// Build-time variables injected by goreleaser / go build -ldflags.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	cfgPath := flag.String("config", "ircd.toml", "Path to TOML config file")
+	showVer := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if *showVer {
+		fmt.Printf("ircd %s (%s) built %s\n", version, commit, date)
+		return
+	}
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
@@ -56,7 +69,7 @@ func main() {
 		Caps:         sc.Caps,
 	})
 
-	slog.Info("starting ircd", "name", sc.Name, "network", sc.Network)
+	slog.Info("starting ircd", "version", version, "name", sc.Name, "network", sc.Network)
 	if err := srv.ListenAndServe(); err != nil {
 		fmt.Fprintf(os.Stderr, "ircd: %v\n", err)
 		os.Exit(1)

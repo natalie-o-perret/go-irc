@@ -18,6 +18,13 @@ import (
 	"github.com/natalie-o-perret/go-irc/irc"
 )
 
+// Build-time variables injected by goreleaser / go build -ldflags.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	server := flag.String("server", "", "IRC server address (host:port)")
 	nick := flag.String("nick", "go-ircx", "Nick to use")
@@ -26,7 +33,13 @@ func main() {
 	pack := flag.Int("pack", 0, "Pack number to request")
 	dest := flag.String("dest", ".", "Download destination directory")
 	list := flag.Bool("list", false, "Request XDCC LIST instead of downloading")
+	showVer := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if *showVer {
+		fmt.Printf("ircx %s (%s) built %s\n", version, commit, date)
+		return
+	}
 
 	if *server == "" {
 		fmt.Fprintln(os.Stderr, "ircx: -server required")

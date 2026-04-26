@@ -1,0 +1,5 @@
+FROM scratch
+COPY ircb /ircb
+EXPOSE 6668 6669
+ENTRYPOINT ["/ircb"]
+

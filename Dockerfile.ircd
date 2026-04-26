@@ -1,0 +1,5 @@
+FROM scratch
+COPY ircd /ircd
+EXPOSE 6667 6697
+ENTRYPOINT ["/ircd"]
+
