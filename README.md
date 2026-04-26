@@ -34,30 +34,42 @@ A high-quality, feature-complete IRC implementation in Go.
 
 ## Comparison with existing frameworks
 
-This project combines protocol primitives, client, server, bouncer, and XDCC tooling in one repository. The table below shows how `go-irc` stacks up against the most commonly used Go IRC libraries and tools.
+This project combines protocol primitives, client, server, bouncer, and XDCC tooling in one repository. The table below
+shows how `go-irc` stacks up against the most commonly used Go IRC libraries and tools.
 
-| Project | Protocol parsing | IRC client | IRC server | Bouncer | DCC / XDCC | SASL | IRCv3 caps | Pure Go |
-|---|---|---|---|---|---|---|---|---|
-| **go-irc** (this repo) | yes | yes | yes | yes | yes | PLAIN, EXTERNAL, SCRAM-SHA-256/512 | 16+ | yes |
-| [`go-ircevent`](https://github.com/thoj/go-ircevent) | partial | yes | no | no | no | no | limited | yes |
-| [`girc`](https://github.com/lrstanley/girc) | yes | yes | no | no | no | PLAIN | moderate | yes |
-| [`Ergo (ergo)`](https://github.com/ergochat/ergo) | yes | no | yes (production) | no | no | several | extensive | yes |
-| [`soju`](https://codeberg.org/emersion/soju) | yes | no | no | yes (production) | no | several | extensive | yes |
-| [`ZNC`](https://znc.in) | yes | no | no | yes (production) | no | several | limited | no (C++) |
+| Project                                              | Protocol parsing | IRC client | IRC server       | Bouncer          | DCC / XDCC | SASL                               | IRCv3 caps | Pure Go  |
+|------------------------------------------------------|------------------|------------|------------------|------------------|------------|------------------------------------|------------|----------|
+| **go-irc** (this repo)                               | yes              | yes        | yes              | yes              | yes        | PLAIN, EXTERNAL, SCRAM-SHA-256/512 | 16+        | yes      |
+| [`go-ircevent`](https://github.com/thoj/go-ircevent) | partial          | yes        | no               | no               | no         | no                                 | limited    | yes      |
+| [`girc`](https://github.com/lrstanley/girc)          | yes              | yes        | no               | no               | no         | PLAIN                              | moderate   | yes      |
+| [`Ergo (ergo)`](https://github.com/ergochat/ergo)    | yes              | no         | yes (production) | no               | no         | several                            | extensive  | yes      |
+| [`soju`](https://codeberg.org/emersion/soju)         | yes              | no         | no               | yes (production) | no         | several                            | extensive  | yes      |
+| [`ZNC`](https://znc.in)                              | yes              | no         | no               | yes (production) | no         | several                            | limited    | no (C++) |
 
 ### Notes on each alternative
 
-**[`go-ircevent`](https://github.com/thoj/go-ircevent)** is a well-known event-driven IRC client. It offers a simple callback-based API and handles basic IRC connection management, but has no server, bouncer, DCC transfer, or SASL support beyond the basics.
+**[`go-ircevent`](https://github.com/thoj/go-ircevent)** is a well-known event-driven IRC client. It offers a simple
+callback-based API and handles basic IRC connection management, but has no server, bouncer, DCC transfer, or SASL
+support beyond the basics.
 
-**[`girc`](https://github.com/lrstanley/girc)** is a modern, ergonomic IRC client library with a focus on extensibility and clean API design. It handles IRCv3 CAP negotiation and some SASL mechanisms, but is limited to the client layer. There is no server, bouncer, or file-transfer support.
+**[`girc`](https://github.com/lrstanley/girc)** is a modern, ergonomic IRC client library with a focus on extensibility
+and clean API design. It handles IRCv3 CAP negotiation and some SASL mechanisms, but is limited to the client layer.
+There is no server, bouncer, or file-transfer support.
 
-**[Ergo (`ergochat/ergo`)](https://github.com/ergochat/ergo)** is a production-grade IRC server implementing many modern IRCv3 extensions and targeting real-world deployments. It is a server binary rather than a reusable library, so embedding or extending it requires more effort. It has no client or DCC/XDCC components.
+**[Ergo (`ergochat/ergo`)](https://github.com/ergochat/ergo)** is a production-grade IRC server implementing many modern
+IRCv3 extensions and targeting real-world deployments. It is a server binary rather than a reusable library, so
+embedding or extending it requires more effort. It has no client or DCC/XDCC components.
 
-**[`soju`](https://codeberg.org/emersion/soju)** is a production IRC bouncer written in Go, maintained by the IRCv3 working group contributors. It is feature-rich and battle-tested as a standalone service but is not designed to be embedded as a library. It has no IRC server or file-transfer support.
+**[`soju`](https://codeberg.org/emersion/soju)** is a production IRC bouncer written in Go, maintained by the IRCv3
+working group contributors. It is feature-rich and battle-tested as a standalone service but is not designed to be
+embedded as a library. It has no IRC server or file-transfer support.
 
-**[ZNC](https://znc.in)** is the most widely deployed IRC bouncer. It is written in C++ and highly extensible through a module system. `go-irc` trades the ecosystem maturity of ZNC for a pure-Go embeddable bouncer you can use directly in your application.
+**[ZNC](https://znc.in)** is the most widely deployed IRC bouncer. It is written in C++ and highly extensible through a
+module system. `go-irc` trades the ecosystem maturity of ZNC for a pure-Go embeddable bouncer you can use directly in
+your application.
 
-If you only need one layer, a specialized project is often the best fit. If you want one Go module that spans the full IRC stack (protocol primitives, client, server, bouncer, DCC/XDCC), `go-irc` is designed for that use case.
+If you only need one layer, a specialized project is often the best fit. If you want one Go module that spans the full
+IRC stack (protocol primitives, client, server, bouncer, DCC/XDCC), `go-irc` is designed for that use case.
 
 ## Binaries
 
@@ -153,39 +165,39 @@ limit   = 500
 import "github.com/natalie-o-perret/go-irc/irc"
 
 msg, err := irc.Parse(":nick!user@host PRIVMSG #go :Hello world")
-fmt.Println(msg.Command)          // PRIVMSG
-fmt.Println(msg.Prefix.Nick)      // nick
-fmt.Println(msg.Trailing())       // Hello world
-fmt.Println(irc.Format(msg))      // back to wire format
+fmt.Println(msg.Command) // PRIVMSG
+fmt.Println(msg.Prefix.Nick) // nick
+fmt.Println(msg.Trailing()) // Hello world
+fmt.Println(irc.Format(msg)) // back to wire format
 ```
 
 ### Connecting a client
 
 ```go
 import (
-    "github.com/natalie-o-perret/go-irc/client"
-    "github.com/natalie-o-perret/go-irc/client/sasl"
-    "github.com/natalie-o-perret/go-irc/irc"
+"github.com/natalie-o-perret/go-irc/client"
+"github.com/natalie-o-perret/go-irc/client/sasl"
+"github.com/natalie-o-perret/go-irc/irc"
 )
 
 c := client.New(client.Config{
-    Addr:     "irc.libera.chat:6667",
-    Nick:     "mynick",
-    User:     "mynick",
-    RealName: "My Name",
-    SASL:     &sasl.Plain{Username: "mynick", Password: "hunter2"},
+Addr:     "irc.libera.chat:6667",
+Nick:     "mynick",
+User:     "mynick",
+RealName: "My Name",
+SASL:     &sasl.Plain{Username: "mynick", Password: "hunter2"},
 })
 
-c.On("001", func(cl *client.Client, msg *irc.Message) {
-    cl.Sendf(irc.JOIN, "#go")
+c.On("001", func (cl *client.Client, msg *irc.Message) {
+cl.Sendf(irc.JOIN, "#go")
 })
 
-c.On(irc.PRIVMSG, func(cl *client.Client, msg *irc.Message) {
-    fmt.Printf("<%s> %s\n", msg.Prefix.Nick, msg.Trailing())
+c.On(irc.PRIVMSG, func (cl *client.Client, msg *irc.Message) {
+fmt.Printf("<%s> %s\n", msg.Prefix.Nick, msg.Trailing())
 })
 
 if err := c.Connect(); err != nil {
-    log.Fatal(err)
+log.Fatal(err)
 }
 ```
 
@@ -193,32 +205,32 @@ if err := c.Connect(); err != nil {
 
 ```go
 import (
-    "github.com/natalie-o-perret/go-irc/client"
-    "github.com/natalie-o-perret/go-irc/client/dcc"
-    "github.com/natalie-o-perret/go-irc/irc"
+"github.com/natalie-o-perret/go-irc/client"
+"github.com/natalie-o-perret/go-irc/client/dcc"
+"github.com/natalie-o-perret/go-irc/irc"
 )
 
 manager := dcc.NewManager()
 
 c := client.New(client.Config{Addr: "irc.rizon.net:6667", Nick: "mynick"})
 
-c.On("001", func(cl *client.Client, _ *irc.Message) {
-    cl.Sendf(irc.PRIVMSG, "XDCC_Bot", "XDCC SEND #1")
+c.On("001", func (cl *client.Client, _ *irc.Message) {
+cl.Sendf(irc.PRIVMSG, "XDCC_Bot", "XDCC SEND #1")
 })
 
-c.On(irc.PRIVMSG, func(cl *client.Client, msg *irc.Message) {
-    cmd, args, ok := dcc.DecodeCTCP(msg.Trailing())
-    if !ok || cmd != "DCC" {
-        return
-    }
-    req, _ := dcc.ParseSendRequest(args[5:]) // strip "SEND "
-    sess, _ := manager.Receive(req, "./downloads")
-    go func() {
-        if err := sess.Wait(); err != nil {
-            log.Println("transfer error:", err)
-        }
-        fmt.Println("done:", sess.Filename)
-    }()
+c.On(irc.PRIVMSG, func (cl *client.Client, msg *irc.Message) {
+cmd, args, ok := dcc.DecodeCTCP(msg.Trailing())
+if !ok || cmd != "DCC" {
+return
+}
+req, _ := dcc.ParseSendRequest(args[5:]) // strip "SEND "
+sess, _ := manager.Receive(req, "./downloads")
+go func () {
+if err := sess.Wait(); err != nil {
+log.Println("transfer error:", err)
+}
+fmt.Println("done:", sess.Filename)
+}()
 })
 ```
 
@@ -228,10 +240,10 @@ c.On(irc.PRIVMSG, func(cl *client.Client, msg *irc.Message) {
 import "github.com/natalie-o-perret/go-irc/server"
 
 srv := server.New(server.Config{
-    Name:    "irc.local",
-    Network: "LocalNet",
-    Listen:  ":6667",
-    MOTD:    "Hello!",
+Name:    "irc.local",
+Network: "LocalNet",
+Listen:  ":6667",
+MOTD:    "Hello!",
 })
 log.Fatal(srv.ListenAndServe())
 ```

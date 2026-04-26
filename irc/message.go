@@ -9,11 +9,6 @@ import (
 	"strings"
 )
 
-// maxLineLen is the traditional 512-byte hard limit (including CRLF).
-const maxLineLen = 512
-
-// maxTagsLen is the IRCv3 message-tags limit (4096 bytes for the tags section).
-const maxTagsLen = 4096
 
 // Tags holds IRCv3 message tags.  A missing value is represented as an empty
 // string; a tag that is present without a value is also an empty string.

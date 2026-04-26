@@ -83,7 +83,7 @@ func (s *Session) Cancel() {
 	s.State.Store(int32(StateCancelled))
 	s.mu.Lock()
 	if s.conn != nil {
-		s.conn.Close()
+		_ = s.conn.Close()
 	}
 	s.mu.Unlock()
 }
@@ -103,7 +103,7 @@ func (s *Session) finish(err error) {
 		s.State.Store(int32(StateCompleted))
 	}
 	if s.conn != nil {
-		s.conn.Close()
+		_ = s.conn.Close()
 	}
 	s.mu.Unlock()
 	select {
@@ -270,7 +270,7 @@ func (m *Manager) runReceive(sess *Session, req *SendRequest, destDir string) {
 		sess.finish(err)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Dial the sender
 	addr := net.JoinHostPort(req.IP.String(), strconv.Itoa(int(req.Port)))
@@ -336,6 +336,7 @@ func (m *Manager) Send(filename string, listenAddr string) (*Session, string, er
 		m.mu.Lock()
 		delete(m.sessions, id)
 		m.mu.Unlock()
+		_ = ln.Close()
 		return nil, "", err
 	}
 
@@ -355,7 +356,7 @@ func (m *Manager) Send(filename string, listenAddr string) (*Session, string, er
 
 func (m *Manager) runSend(sess *Session, ln net.Listener, filename string) {
 	defer func() {
-		ln.Close()
+		_ = ln.Close()
 		m.mu.Lock()
 		delete(m.sessions, sess.ID)
 		m.mu.Unlock()
@@ -374,7 +375,7 @@ func (m *Manager) runSend(sess *Session, ln net.Listener, filename string) {
 		sess.finish(err)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if sess.Resume > 0 {
 		if _, err := f.Seek(sess.Resume, io.SeekStart); err != nil {
@@ -407,10 +408,10 @@ func (m *Manager) runSend(sess *Session, ln net.Listener, filename string) {
 			return
 		}
 		// Read ACK (we don't strictly need to verify it but we consume it)
-		conn.Read(ackBuf)
+		_, _ = conn.Read(ackBuf)
 	}
 	// Wait for final ACK
-	conn.Read(ackBuf)
+	_, _ = conn.Read(ackBuf)
 	sess.finish(nil)
 }
 

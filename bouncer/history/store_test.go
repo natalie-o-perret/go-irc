@@ -38,7 +38,7 @@ func TestMemoryStoreTimeBounds(t *testing.T) {
 	base := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	for i := range 10 {
-		s.Append("net", "#chan", base.Add(time.Duration(i)*time.Minute), makeMsg("m"))
+		_ = s.Append("net", "#chan", base.Add(time.Duration(i)*time.Minute), makeMsg("m"))
 	}
 
 	after := base.Add(4 * time.Minute)
@@ -63,7 +63,7 @@ func TestMemoryStoreEmpty(t *testing.T) {
 func TestMemoryStoreRingOverwrite(t *testing.T) {
 	s := history.NewMemoryStore(3)
 	for i := range 6 {
-		s.Append("n", "#c", time.Now(), makeMsg(string(rune('a'+i))))
+		_ = s.Append("n", "#c", time.Now(), makeMsg(string(rune('a'+i))))
 	}
 	entries, _ := s.Query("n", "#c", history.Query{Limit: 10})
 	if len(entries) != 3 {

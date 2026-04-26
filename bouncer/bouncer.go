@@ -175,7 +175,7 @@ func (n *Network) connect() {
 		}
 		n.mu.Unlock()
 		for _, ch := range n.cfg.Channels {
-			c.Sendf(irc.JOIN, ch)
+			_ = c.Sendf(irc.JOIN, ch)
 		}
 	})
 
@@ -238,7 +238,7 @@ func (n *Network) handleUpstream(msg *irc.Message) {
 						t = pt
 					}
 				}
-				n.history.Append(n.cfg.Name, strings.ToLower(target), t, msg)
+				n.history.Append(n.cfg.Name, strings.ToLower(target), t, msg) //nolint:errcheck
 			}
 		}
 	}
@@ -291,8 +291,8 @@ func (ds *DownstreamSession) send(msg *irc.Message) {
 		}
 	}
 	line := out.String() + "\r\n"
-	ds.writer.WriteString(line)
-	ds.writer.Flush()
+	_, _ = ds.writer.WriteString(line)
+	_ = ds.writer.Flush()
 }
 
 func (ds *DownstreamSession) sendNumeric(n irc.Numeric, params ...string) {
@@ -312,7 +312,7 @@ func (ds *DownstreamSession) run() {
 		if ds.network != nil {
 			ds.network.detach(ds)
 		}
-		ds.conn.Close()
+		_ = ds.conn.Close()
 	}()
 
 	scanner := bufio.NewScanner(ds.conn)
@@ -427,7 +427,7 @@ func (ds *DownstreamSession) run() {
 			// Strip bouncer-only tags and forward
 			upstream := msg.Clone()
 			upstream.Tags = nil
-			ds.network.client.Send(upstream)
+			_ = ds.network.client.Send(upstream)
 		}
 	}
 }
@@ -552,8 +552,7 @@ func New(cfg Config) *Bouncer {
 		log:      slog.Default(),
 	}
 
-	var hist history.Store
-	hist = history.NewMemoryStore(cfg.History.Limit)
+	hist := history.NewMemoryStore(cfg.History.Limit)
 
 	for _, ncfg := range cfg.Networks {
 		n := newNetwork(ncfg, hist)
@@ -579,7 +578,7 @@ func (b *Bouncer) ListenAndServe() error {
 	if b.cfg.TLSListen != "" && b.cfg.TLSConfig != nil {
 		tlsLn, err := tls.Listen("tcp", b.cfg.TLSListen, b.cfg.TLSConfig)
 		if err != nil {
-			ln.Close()
+			_ = ln.Close()
 			return fmt.Errorf("bouncer: tls listen %s: %w", b.cfg.TLSListen, err)
 		}
 		b.log.Info("bouncer TLS listening", "addr", b.cfg.TLSListen)
@@ -590,7 +589,7 @@ func (b *Bouncer) ListenAndServe() error {
 }
 
 func (b *Bouncer) acceptLoop(ln net.Listener) error {
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	for {
 		conn, err := ln.Accept()
 		if err != nil {

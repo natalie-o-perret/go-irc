@@ -237,15 +237,15 @@ func (c *Client) Connect() error {
 	// Kick off CAP negotiation
 	c.capState.phase = capPhaseLSSent
 	if err := c.Sendf(irc.CAP, "*", irc.CapLS, "302"); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return err
 	}
 
 	if c.cfg.Password != "" {
-		c.Sendf(irc.PASS, c.cfg.Password)
+		_ = c.Sendf(irc.PASS, c.cfg.Password)
 	}
-	c.Sendf(irc.NICK, c.cfg.Nick)
-	c.Sendf(irc.USER, c.cfg.User, "0", "*", c.cfg.RealName)
+	_ = c.Sendf(irc.NICK, c.cfg.Nick)
+	_ = c.Sendf(irc.USER, c.cfg.User, "0", "*", c.cfg.RealName)
 
 	return c.readLoop(conn)
 }
@@ -253,13 +253,13 @@ func (c *Client) Connect() error {
 // Disconnect sends QUIT and closes the connection.
 func (c *Client) Disconnect(message string) {
 	if message != "" {
-		c.Sendf(irc.QUIT, message)
+		_ = c.Sendf(irc.QUIT, message)
 	} else {
-		c.Sendf(irc.QUIT)
+		_ = c.Sendf(irc.QUIT)
 	}
 	c.mu.Lock()
 	if c.conn != nil {
-		c.conn.Close()
+		_ = c.conn.Close()
 	}
 	c.mu.Unlock()
 }
@@ -309,7 +309,7 @@ func (c *Client) installBuiltinHandlers() {
 }
 
 func (c *Client) handlePing(_ *Client, msg *irc.Message) {
-	c.Sendf(irc.PONG, msg.Params...)
+	_ = c.Sendf(irc.PONG, msg.Params...)
 }
 
 func (c *Client) handleNickChange(_ *Client, msg *irc.Message) {
@@ -324,7 +324,7 @@ func (c *Client) handleNickInUse(_ *Client, _ *irc.Message) {
 	c.mu.Lock()
 	newNick := c.nick + "_"
 	c.mu.Unlock()
-	c.Sendf(irc.NICK, newNick)
+	_ = c.Sendf(irc.NICK, newNick)
 }
 
 func (c *Client) handleWelcome(_ *Client, msg *irc.Message) {
@@ -369,7 +369,7 @@ func (c *Client) handleCAP(_ *Client, msg *irc.Message) {
 		if len(want) > 0 {
 			c.capState.pending = want
 			c.capState.phase = capPhaseREQSent
-			c.Sendf(irc.CAP, "*", irc.CapREQ, strings.Join(want, " "))
+			_ = c.Sendf(irc.CAP, "*", irc.CapREQ, strings.Join(want, " "))
 		} else {
 			c.capEnd()
 		}
@@ -387,7 +387,7 @@ func (c *Client) handleCAP(_ *Client, msg *irc.Message) {
 		if c.capState.enabled[irc.CapSASL] && c.cfg.SASL != nil {
 			c.capState.phase = capPhaseSASL
 			c.saslMech = c.cfg.SASL
-			c.Sendf(irc.AUTHENTICATE, c.saslMech.Name())
+			_ = c.Sendf(irc.AUTHENTICATE, c.saslMech.Name())
 		} else {
 			c.capEnd()
 		}
@@ -422,20 +422,20 @@ func (c *Client) handleAuthenticate(_ *Client, msg *irc.Message) {
 		var err error
 		challenge, err = base64.StdEncoding.DecodeString(msg.Params[0])
 		if err != nil {
-			c.Sendf(irc.AUTHENTICATE, "*")
+			_ = c.Sendf(irc.AUTHENTICATE, "*")
 			return
 		}
 	}
 
 	resp, _, err := c.saslMech.Next(challenge)
 	if err != nil {
-		c.Sendf(irc.AUTHENTICATE, "*")
+		_ = c.Sendf(irc.AUTHENTICATE, "*")
 		return
 	}
 	if len(resp) == 0 {
-		c.Sendf(irc.AUTHENTICATE, "+")
+		_ = c.Sendf(irc.AUTHENTICATE, "+")
 	} else {
-		c.Sendf(irc.AUTHENTICATE, base64.StdEncoding.EncodeToString(resp))
+		_ = c.Sendf(irc.AUTHENTICATE, base64.StdEncoding.EncodeToString(resp))
 	}
 }
 
@@ -449,7 +449,7 @@ func (c *Client) handleSASLFail(_ *Client, _ *irc.Message) {
 
 func (c *Client) capEnd() {
 	c.capState.phase = capPhaseDone
-	c.Sendf(irc.CAP, "*", irc.CapEND)
+	_ = c.Sendf(irc.CAP, "*", irc.CapEND)
 }
 
 // capWantList returns the subset of desired caps that the server advertises.

@@ -231,11 +231,6 @@ func (srv *Server) tryRegister(s *Session) {
 		return
 	}
 
-	// Check server password
-	if srv.cfg.Password != "" {
-		// Password check is done via PASS; if not already validated, reject.
-		// (For simplicity we skip persistent state here — real impl would track PASS.)
-	}
 
 	if err := srv.sessions.Add(s); err != nil {
 		s.SendNumeric(irc.ERR_NICKNAMEINUSE, s.nick, "Nickname is already in use")
@@ -275,18 +270,11 @@ func (srv *Server) handleCAP(s *Session, msg *irc.Message) {
 	if len(msg.Params) < 1 {
 		return
 	}
-	subCmd := strings.ToUpper(msg.Params[0])
-	if len(msg.Params) >= 2 {
-		subCmd = strings.ToUpper(msg.Params[1])
-	} else {
-		// Some clients send "CAP LS" as first param
-		subCmd = strings.ToUpper(msg.Params[0])
-	}
 
 	// Reparse: CAP [nick] subcmd [params]
 	// params[0] might be nick or subcmd
 	params := msg.Params
-	subCmd = strings.ToUpper(params[0])
+	subCmd := strings.ToUpper(params[0])
 	var subArg string
 	if len(params) >= 2 {
 		// params[0] could be "*" (the nick placeholder)
@@ -541,7 +529,7 @@ func (srv *Server) handleJoin(s *Session, msg *irc.Message) {
 		// Check limit
 		if limit, ok := ch.modes.Arg('l'); ok {
 			var n int
-			fmt.Sscan(limit, &n)
+			_, _ = fmt.Sscan(limit, &n)
 			if n > 0 && len(ch.Members()) >= n {
 				s.SendNumeric(irc.ERR_CHANNELISFULL, chanName, "Cannot join channel (+l)")
 				continue
@@ -1105,7 +1093,7 @@ func (srv *Server) handleQuit(s *Session, msg *irc.Message) {
 		Command: irc.ERROR,
 		Params:  []string{"Closing Link: " + s.host + " (Quit: " + reason + ")"},
 	})
-	s.conn.Close()
+	_ = s.conn.Close()
 }
 
 func (srv *Server) sendMOTD(s *Session) {
@@ -1230,7 +1218,7 @@ func (srv *Server) handleKill(s *Session, msg *irc.Message) {
 		Command: irc.ERROR,
 		Params:  []string{"Killed by " + s.nick + " (" + reason + ")"},
 	})
-	target.conn.Close()
+	_ = target.conn.Close()
 }
 
 // ---------------------------------------------------------------------------

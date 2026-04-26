@@ -76,10 +76,10 @@ func TestClientJoinAndPrivmsg(t *testing.T) {
 	})
 
 	c1.On("001", func(cl *client.Client, _ *irc.Message) {
-		cl.Sendf(irc.JOIN, "#test")
+		_ = cl.Sendf(irc.JOIN, "#test")
 	})
 	c2.On("001", func(cl *client.Client, _ *irc.Message) {
-		cl.Sendf(irc.JOIN, "#test")
+		_ = cl.Sendf(irc.JOIN, "#test")
 	})
 	c2.On(irc.PRIVMSG, func(_ *client.Client, msg *irc.Message) {
 		if msg.Prefix != nil && msg.Prefix.Nick == "nick1" {
@@ -87,13 +87,13 @@ func TestClientJoinAndPrivmsg(t *testing.T) {
 		}
 	})
 
-	go c1.Connect()
-	go c2.Connect()
+	go func() { _ = c1.Connect() }()
+	go func() { _ = c2.Connect() }()
 
 	// Wait for both to join
 	time.Sleep(300 * time.Millisecond)
 
-	c1.Sendf(irc.PRIVMSG, "#test", "hello from nick1")
+	_ = c1.Sendf(irc.PRIVMSG, "#test", "hello from nick1")
 
 	select {
 	case text := <-recv:

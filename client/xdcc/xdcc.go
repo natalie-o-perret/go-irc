@@ -39,8 +39,6 @@ func (pl PackList) ByNumber(n int) (Pack, bool) {
 var (
 	// SysReset/iroffer-ng: #1  10x  [12.3M]  filename.mkv
 	reIroffer = regexp.MustCompile(`#(\d+)\s+(\d+)x\s+\[([^\]]+)\]\s+(.+)`)
-	// Generic fallback: Pack #1 (filename.mkv) [12.3M] 10 gets
-	reGeneric = regexp.MustCompile(`(?i)pack\s*#?(\d+)\s+.+?(\d+)\s+gets`)
 )
 
 // ParseListNotice attempts to parse a single XDCC LIST NOTICE line.
@@ -182,7 +180,7 @@ func (b *Bot) RequestPack(packNum int) (*dcc.Session, string, error) {
 
 	// Track completion to clean up slot
 	go func() {
-		sess.Wait()
+		_ = sess.Wait()
 		b.mu.Lock()
 		ids := b.active[packNum]
 		for i, id := range ids {

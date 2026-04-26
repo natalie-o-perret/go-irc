@@ -63,16 +63,16 @@ func main() {
 	// After welcome, join channel and request pack
 	c.On("001", func(cl *client.Client, msg *irc.Message) {
 		if *channel != "" {
-			cl.Sendf(irc.JOIN, *channel)
+			_ = cl.Sendf(irc.JOIN, *channel)
 		}
 		// Wait a moment for joins to settle
 		time.AfterFunc(2*time.Second, func() {
 			if *list {
 				slog.Info("requesting XDCC list", "bot", *bot)
-				cl.Sendf(irc.PRIVMSG, *bot, "\x01DCC LIST\x01")
+				_ = cl.Sendf(irc.PRIVMSG, *bot, "\x01DCC LIST\x01")
 			} else if *pack > 0 {
 				slog.Info("requesting XDCC pack", "bot", *bot, "pack", *pack)
-				cl.Sendf(irc.PRIVMSG, *bot, fmt.Sprintf("XDCC SEND #%d", *pack))
+				_ = cl.Sendf(irc.PRIVMSG, *bot, fmt.Sprintf("XDCC SEND #%d", *pack))
 			}
 		})
 	})

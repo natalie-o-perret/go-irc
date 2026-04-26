@@ -95,8 +95,8 @@ func (s *Session) Send(msg *irc.Message) {
 	s.writerMu.Lock()
 	defer s.writerMu.Unlock()
 	line := msg.String() + "\r\n"
-	s.writer.WriteString(line)
-	s.writer.Flush()
+	_, _ = s.writer.WriteString(line)
+	_ = s.writer.Flush()
 }
 
 // Sendf builds and sends a simple message.
@@ -404,7 +404,6 @@ type Server struct {
 
 	// Stats
 	clientsTotal   atomic.Int64
-	clientsMax     atomic.Int64
 	clientsCurrent atomic.Int64
 
 	// Listeners (for graceful shutdown)
@@ -451,7 +450,7 @@ func (srv *Server) ListenAndServe() error {
 	if srv.cfg.TLSListen != "" && srv.cfg.TLSConfig != nil {
 		tlsLn, err := tls.Listen("tcp", srv.cfg.TLSListen, srv.cfg.TLSConfig)
 		if err != nil {
-			ln.Close()
+			_ = ln.Close()
 			return fmt.Errorf("server: tls listen %s: %w", srv.cfg.TLSListen, err)
 		}
 		srv.trackListener(tlsLn)
@@ -495,7 +494,7 @@ func (srv *Server) Close() {
 	srv.listenerMu.Lock()
 	defer srv.listenerMu.Unlock()
 	for _, ln := range srv.listeners {
-		ln.Close()
+		_ = ln.Close()
 	}
 }
 
@@ -506,15 +505,15 @@ func (srv *Server) trackListener(ln net.Listener) {
 }
 
 func (srv *Server) acceptLoop(ln net.Listener, tls bool) error {
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			return err
 		}
 		if srv.cfg.MaxClients > 0 && int(srv.clientsCurrent.Load()) >= srv.cfg.MaxClients {
-			conn.Write([]byte("ERROR :Server is full\r\n"))
-			conn.Close()
+			_, _ = conn.Write([]byte("ERROR :Server is full\r\n"))
+			_ = conn.Close()
 			continue
 		}
 		s := newSession(conn, srv)
@@ -580,7 +579,7 @@ func (srv *Server) removeSession(s *Session) {
 			}
 		}
 	}
-	s.conn.Close()
+	_ = s.conn.Close()
 }
 
 // Broadcast sends a message to all registered sessions.
