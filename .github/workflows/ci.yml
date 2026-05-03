@@ -45,7 +45,7 @@ jobs:
           awk -v t="$total" 'BEGIN { if (t+0 < 80) { print "Coverage " t "% is below 80% threshold"; exit 1 } }'
       - name: upload coverage
         if: matrix.go == '1.26'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.out
