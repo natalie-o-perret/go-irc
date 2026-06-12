@@ -2,9 +2,9 @@ name: ci - lint
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
-    branches: [master]
+    branches: [main]
     types: [opened, edited, synchronize, reopened]
 
 jobs:
