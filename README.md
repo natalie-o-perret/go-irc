@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Contributing](https://img.shields.io/badge/contributing-guide-blue)](CONTRIBUTING.md)
 
-A high-quality, feature-complete IRC implementation in Go.
+A client, server, and bouncer implementation for IRC in Go.
 
 > Full IRC protocol client & server library - IRC bouncer - XDCC file transfers - IRCv3 - pure Go - no CGo.
 
@@ -25,12 +25,12 @@ A high-quality, feature-complete IRC implementation in Go.
 | **`config/`**           | TOML config loading with validation and defaults                                                    |
 | **`internal/ringbuf/`** | Generic thread-safe ring buffer                                                                     |
 
-### IRCv3 capabilities supported
+### IRCv3 capabilities advertised by the server
 
-`server-time` · `message-tags` · `batch` · `labeled-response` · `echo-message` ·
-`multi-prefix` · `away-notify` · `extended-join` · `chghost` · `setname` ·
-`account-tag` · `cap-notify` · `userhost-in-names` · `invite-notify` ·
-`account-notify` · `sasl`
+`server-time` · `message-tags` · `batch` · `draft/chathistory` · `echo-message` ·
+`multi-prefix` · `away-notify` · `extended-join` · `setname` · `cap-notify` · `invite-notify`
+
+The client also supports SASL PLAIN, EXTERNAL, SCRAM-SHA-256, and SCRAM-SHA-512 when the upstream server advertises them.
 
 ## Comparison with existing frameworks
 
@@ -39,7 +39,7 @@ shows how `go-irc` stacks up against the most commonly used Go IRC libraries and
 
 | Project                                              | Protocol parsing | IRC client | IRC server       | Bouncer          | DCC / XDCC | SASL                               | IRCv3 caps | Pure Go  |
 |------------------------------------------------------|------------------|------------|------------------|------------------|------------|------------------------------------|------------|----------|
-| **go-irc** (this repo)                               | yes              | yes        | yes              | yes              | yes        | PLAIN, EXTERNAL, SCRAM-SHA-256/512 | 16+        | yes      |
+| **go-irc** (this repo)                               | yes              | yes        | yes              | yes              | yes        | PLAIN, EXTERNAL, SCRAM-SHA-256/512 | selected   | yes      |
 | [`go-ircevent`](https://github.com/thoj/go-ircevent) | partial          | yes        | no               | no               | no         | no                                 | limited    | yes      |
 | [`girc`](https://github.com/lrstanley/girc)          | yes              | yes        | no               | no               | no         | PLAIN                              | moderate   | yes      |
 | [`Ergo (ergo)`](https://github.com/ergochat/ergo)    | yes              | no         | yes (production) | no               | no         | several                            | extensive  | yes      |
