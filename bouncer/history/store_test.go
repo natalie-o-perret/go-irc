@@ -70,3 +70,16 @@ func TestMemoryStoreRingOverwrite(t *testing.T) {
 		t.Errorf("expected 3 entries (ring size), got %d", len(entries))
 	}
 }
+
+func TestMemoryStoreAfterMessageID(t *testing.T) {
+	s := history.NewMemoryStore(10)
+	for _, id := range []string{"one", "two", "three"} {
+		msg := makeMsg(id)
+		msg.Tags = irc.Tags{"msgid": id}
+		_ = s.Append("net", "#chan", time.Now(), msg)
+	}
+	entries, err := s.Query("net", "#chan", history.Query{AfterMsgID: "one", Limit: 10})
+	if err != nil || len(entries) != 2 || entries[0].Msg.Tags["msgid"] != "two" {
+		t.Fatalf("unexpected msgid query: entries=%v err=%v", entries, err)
+	}
+}

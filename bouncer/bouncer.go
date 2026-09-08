@@ -16,10 +16,13 @@ package bouncer
 
 import (
 	"bufio"
+	"crypto/rand"
 	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -62,6 +65,8 @@ type HistoryConfig struct {
 	Limit int
 }
 
+const chatHistoryLimit = 50
+
 // Config is the top-level bouncer configuration.
 type Config struct {
 	// Listen address for downstream clients.
@@ -92,6 +97,7 @@ type ChannelState struct {
 type NetworkState struct {
 	Nick     string
 	Channels map[string]*ChannelState
+	Queries  map[string]bool
 }
 
 // Network manages one upstream IRC connection.
@@ -109,7 +115,7 @@ func newNetwork(cfg NetworkConfig, hist history.Store) *Network {
 	return &Network{
 		cfg:     cfg,
 		history: hist,
-		state:   &NetworkState{Channels: make(map[string]*ChannelState)},
+		state:   &NetworkState{Channels: make(map[string]*ChannelState), Queries: make(map[string]bool)},
 	}
 }
 
@@ -227,18 +233,32 @@ func (n *Network) handleUpstream(msg *irc.Message) {
 		}
 	}
 
-	// Store history for PRIVMSG/NOTICE targeting a channel
+	// Store channel and private-message history.
 	if msg.Command == irc.PRIVMSG || msg.Command == irc.NOTICE {
 		if len(msg.Params) >= 2 {
-			target := msg.Params[0]
-			if strings.HasPrefix(target, "#") || strings.HasPrefix(target, "&") {
+			target := strings.ToLower(msg.Params[0])
+			store := strings.HasPrefix(target, "#") || strings.HasPrefix(target, "&")
+			if !store && msg.Prefix != nil {
+				n.mu.Lock()
+				if strings.EqualFold(target, n.state.Nick) {
+					target = strings.ToLower(msg.Prefix.Nick)
+				} else if strings.EqualFold(msg.Prefix.Nick, n.state.Nick) {
+					store = true
+				}
+				if target != "" {
+					n.state.Queries[target] = true
+					store = true
+				}
+				n.mu.Unlock()
+			}
+			if store {
 				t := time.Now()
 				if ts, ok := msg.Tags.Get("time"); ok {
 					if pt, err := time.Parse(time.RFC3339, ts); err == nil {
 						t = pt
 					}
 				}
-				n.history.Append(n.cfg.Name, strings.ToLower(target), t, msg) //nolint:errcheck
+				n.history.Append(n.cfg.Name, target, t, msg) //nolint:errcheck
 			}
 		}
 	}
@@ -249,7 +269,7 @@ func (n *Network) handleUpstream(msg *irc.Message) {
 		out.Tags = make(irc.Tags)
 	}
 	if _, ok := out.Tags.Get("time"); !ok {
-		out.Tags["time"] = time.Now().UTC().Format(time.RFC3339Nano)
+		out.Tags["time"] = time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 	}
 	n.fanOut(out)
 }
@@ -260,14 +280,15 @@ func (n *Network) handleUpstream(msg *irc.Message) {
 
 // DownstreamSession is a client connected to the bouncer.
 type DownstreamSession struct {
-	conn    net.Conn
-	writer  *bufio.Writer
-	wmu     sync.Mutex
-	bouncer *Bouncer
-	network *Network
-	nick    string
-	user    string
-	caps    map[string]bool
+	conn       net.Conn
+	writer     *bufio.Writer
+	wmu        sync.Mutex
+	bouncer    *Bouncer
+	network    *Network
+	nick       string
+	user       string
+	caps       map[string]bool
+	capVersion int
 }
 
 func newDownstreamSession(conn net.Conn, b *Bouncer) *DownstreamSession {
@@ -280,14 +301,27 @@ func newDownstreamSession(conn net.Conn, b *Bouncer) *DownstreamSession {
 }
 
 func (ds *DownstreamSession) send(msg *irc.Message) {
+	if msg.Command == irc.TAGMSG && !ds.caps[irc.CapMessageTags] {
+		return
+	}
 	ds.wmu.Lock()
 	defer ds.wmu.Unlock()
-	// Strip server-time tag if downstream hasn't negotiated it
 	out := msg
-	if !ds.caps[irc.CapServerTime] {
-		if _, ok := msg.Tags.Get("time"); ok {
-			out = msg.Clone()
-			delete(out.Tags, "time")
+	if len(msg.Tags) > 0 {
+		out = msg.Clone()
+		for tag := range out.Tags {
+			cap := irc.CapMessageTags
+			switch tag {
+			case "time":
+				cap = irc.CapServerTime
+			case "batch":
+				cap = irc.CapBatch
+			case "draft/chathistory-end":
+				cap = irc.CapChatHistory
+			}
+			if !ds.caps[cap] {
+				delete(out.Tags, tag)
+			}
 		}
 	}
 	line := out.String() + "\r\n"
@@ -323,10 +357,14 @@ func (ds *DownstreamSession) run() {
 	var nick, user, realname string
 	var registered bool
 	caps := make(map[string]bool)
-	var capLSDone bool
+	capDone := true
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		if irc.InputTooLong(line) {
+			ds.sendNumeric(irc.ERR_INPUTTOOLONG, "Input line was too long")
+			continue
+		}
 		msg, err := irc.Parse(line)
 		if err != nil {
 			continue
@@ -334,7 +372,7 @@ func (ds *DownstreamSession) run() {
 
 		switch msg.Command {
 		case irc.CAP:
-			ds.handleCAP(msg, caps, &capLSDone)
+			ds.handleCAP(msg, caps, &capDone)
 		case irc.PASS:
 			if len(msg.Params) > 0 {
 				// Format: user/network:password or user:password
@@ -351,7 +389,7 @@ func (ds *DownstreamSession) run() {
 			}
 		}
 
-		if !registered && nick != "" && user != "" && capLSDone {
+		if !registered && nick != "" && user != "" && capDone {
 			// Authenticate
 			if !ds.bouncer.authenticate(passUser, passPass) {
 				ds.send(&irc.Message{
@@ -392,6 +430,7 @@ func (ds *DownstreamSession) run() {
 				Command: "002",
 				Params:  []string{nick, "Your host is go-irc bouncer"},
 			})
+			ds.sendNumeric(irc.RPL_ISUPPORT, "CHATHISTORY=50", "MSGREFTYPES=timestamp,msgid", "are supported by this server")
 			ds.send(&irc.Message{
 				Prefix:  &irc.Prefix{Nick: serverName},
 				Command: "376",
@@ -419,14 +458,33 @@ func (ds *DownstreamSession) run() {
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		if irc.InputTooLong(line) {
+			ds.sendNumeric(irc.ERR_INPUTTOOLONG, "Input line was too long")
+			continue
+		}
 		msg, err := irc.Parse(line)
 		if err != nil {
 			continue
 		}
+		if msg.Command == irc.CAP {
+			done := true
+			ds.handleCAP(msg, ds.caps, &done)
+			continue
+		}
+		if msg.Command == irc.CHATHISTORY {
+			ds.handleChatHistory(msg)
+			continue
+		}
 		if ds.network != nil && ds.network.client != nil {
-			// Strip bouncer-only tags and forward
 			upstream := msg.Clone()
-			upstream.Tags = nil
+			upstream.Tags = make(irc.Tags)
+			if ds.caps[irc.CapMessageTags] {
+				for tag, value := range msg.Tags {
+					if strings.HasPrefix(tag, "+") {
+						upstream.Tags[tag] = value
+					}
+				}
+			}
 			_ = ds.network.client.Send(upstream)
 		}
 	}
@@ -434,18 +492,19 @@ func (ds *DownstreamSession) run() {
 
 func (ds *DownstreamSession) handleCAP(msg *irc.Message, caps map[string]bool, done *bool) {
 	if len(msg.Params) < 1 {
+		ds.sendNumeric(irc.ERR_INVALIDCAPCMD, "*", "Invalid CAP command")
 		return
 	}
-	params := msg.Params
-	subCmd := strings.ToUpper(params[0])
-	if params[0] == "*" && len(params) >= 2 {
-		subCmd = strings.ToUpper(params[1])
+	subCmd := strings.ToUpper(msg.Params[0])
+	arg := ""
+	if len(msg.Params) >= 2 {
+		arg = msg.Params[1]
 	}
 
 	supportedCaps := []string{
-		irc.CapServerTime, irc.CapMessageTags, irc.CapBatch,
+		irc.CapServerTime, irc.CapMessageTags, irc.CapBatch, irc.CapChatHistory,
 		irc.CapMultiPrefix, irc.CapAwayNotify, irc.CapExtendedJoin,
-		irc.CapSetname, irc.CapAccountTag, irc.CapCapNotify,
+		irc.CapSetname, irc.CapCapNotify,
 	}
 
 	nick := ds.nick
@@ -456,6 +515,10 @@ func (ds *DownstreamSession) handleCAP(msg *irc.Message, caps map[string]bool, d
 	switch subCmd {
 	case irc.CapLS:
 		*done = false
+		if version, err := strconv.Atoi(arg); err == nil && version >= 302 {
+			ds.capVersion = version
+			caps[irc.CapCapNotify] = true
+		}
 		ds.send(&irc.Message{
 			Prefix:  &irc.Prefix{Nick: "bouncer"},
 			Command: irc.CAP,
@@ -463,14 +526,26 @@ func (ds *DownstreamSession) handleCAP(msg *irc.Message, caps map[string]bool, d
 		})
 
 	case irc.CapREQ:
-		arg := ""
-		if len(params) >= 3 {
-			arg = strings.TrimPrefix(params[2], ":")
-		} else if len(params) >= 2 && params[0] != "*" {
-			arg = strings.TrimPrefix(params[1], ":")
+		*done = false
+		arg = strings.TrimPrefix(arg, ":")
+		for _, requested := range strings.Fields(arg) {
+			name := strings.TrimPrefix(requested, "-")
+			if !slices.Contains(supportedCaps, name) {
+				ds.send(&irc.Message{
+					Prefix:  &irc.Prefix{Nick: "bouncer"},
+					Command: irc.CAP,
+					Params:  []string{nick, irc.CapNAK, arg},
+				})
+				return
+			}
 		}
-		for _, cap := range strings.Fields(arg) {
-			caps[strings.TrimPrefix(cap, "-")] = true
+		for _, requested := range strings.Fields(arg) {
+			name := strings.TrimPrefix(requested, "-")
+			if strings.HasPrefix(requested, "-") && (name != irc.CapCapNotify || ds.capVersion < 302) {
+				delete(caps, name)
+			} else if !strings.HasPrefix(requested, "-") {
+				caps[name] = true
+			}
 		}
 		ds.send(&irc.Message{
 			Prefix:  &irc.Prefix{Nick: "bouncer"},
@@ -478,8 +553,192 @@ func (ds *DownstreamSession) handleCAP(msg *irc.Message, caps map[string]bool, d
 			Params:  []string{nick, irc.CapACK, arg},
 		})
 
+	case irc.CapLIST:
+		var enabled []string
+		for name := range caps {
+			if caps[name] {
+				enabled = append(enabled, name)
+			}
+		}
+		slices.Sort(enabled)
+		ds.send(&irc.Message{
+			Prefix:  &irc.Prefix{Nick: "bouncer"},
+			Command: irc.CAP,
+			Params:  []string{nick, irc.CapLIST, strings.Join(enabled, " ")},
+		})
+
 	case irc.CapEND:
 		*done = true
+
+	default:
+		ds.sendNumeric(irc.ERR_INVALIDCAPCMD, subCmd, "Invalid CAP command")
+	}
+}
+
+func (ds *DownstreamSession) handleChatHistory(msg *irc.Message) {
+	if !ds.caps[irc.CapChatHistory] {
+		ds.sendNumeric(irc.ERR_UNKNOWNCOMMAND, irc.CHATHISTORY, "Unknown command")
+		return
+	}
+	subcommand := strings.ToUpper(msg.Param(0))
+	if subcommand == "TARGETS" {
+		ds.handleChatHistoryTargets(msg)
+		return
+	}
+	expected := 4
+	if subcommand == "BETWEEN" {
+		expected = 5
+	}
+	if len(msg.Params) != expected {
+		ds.sendChatHistoryFail("INVALID_PARAMS", msg.Param(0), "Invalid parameters")
+		return
+	}
+
+	target := strings.ToLower(msg.Params[1])
+	limit, err := strconv.Atoi(msg.Params[len(msg.Params)-1])
+	if err != nil || limit <= 0 {
+		ds.sendChatHistoryFail("INVALID_PARAMS", msg.Params[0], "Invalid limit")
+		return
+	}
+	if limit > chatHistoryLimit {
+		limit = chatHistoryLimit
+	}
+	if ds.network == nil {
+		ds.sendChatHistoryFail("INVALID_TARGET", msg.Params[0], "Messages could not be retrieved")
+		return
+	}
+	ds.network.mu.RLock()
+	_, channelOK := ds.network.state.Channels[target]
+	queryOK := ds.network.state.Queries[target]
+	ds.network.mu.RUnlock()
+	if !channelOK && !queryOK {
+		ds.sendChatHistoryFail("INVALID_TARGET", msg.Params[0], "Messages could not be retrieved")
+		return
+	}
+
+	stored, err := ds.network.history.Query(ds.network.cfg.Name, target, history.Query{Limit: int(^uint(0) >> 1)})
+	if err != nil {
+		ds.sendChatHistoryFail("MESSAGE_ERROR", msg.Params[0], "Messages could not be retrieved")
+		return
+	}
+	entries := make([]irc.ChatHistoryEntry, len(stored))
+	for i, entry := range stored {
+		entries[i] = irc.ChatHistoryEntry{Time: entry.Time, Msg: entry.Msg}
+	}
+	entries, complete, err := irc.SelectChatHistory(entries, subcommand, msg.Params[2:len(msg.Params)-1], limit)
+	if err != nil {
+		code := "INVALID_PARAMS"
+		if strings.Contains(err.Error(), "unsupported") {
+			code = "INVALID_MSGREFTYPE"
+		}
+		ds.sendChatHistoryFail(code, msg.Params[0], err.Error())
+		return
+	}
+	ds.sendHistory(target, entries, complete)
+}
+
+func (ds *DownstreamSession) handleChatHistoryTargets(msg *irc.Message) {
+	if len(msg.Params) != 4 || ds.network == nil {
+		ds.sendChatHistoryFail("INVALID_PARAMS", msg.Param(0), "Invalid parameters")
+		return
+	}
+	first, err := time.Parse(irc.ServerTimeLayout, strings.TrimPrefix(msg.Params[1], "timestamp="))
+	if err != nil || !strings.HasPrefix(msg.Params[1], "timestamp=") {
+		ds.sendChatHistoryFail("INVALID_PARAMS", msg.Params[0], "Invalid timestamp")
+		return
+	}
+	second, err := time.Parse(irc.ServerTimeLayout, strings.TrimPrefix(msg.Params[2], "timestamp="))
+	if err != nil || !strings.HasPrefix(msg.Params[2], "timestamp=") {
+		ds.sendChatHistoryFail("INVALID_PARAMS", msg.Params[0], "Invalid timestamp")
+		return
+	}
+	limit, err := strconv.Atoi(msg.Params[3])
+	if err != nil || limit <= 0 {
+		ds.sendChatHistoryFail("INVALID_PARAMS", msg.Params[0], "Invalid limit")
+		return
+	}
+	if first.After(second) {
+		first, second = second, first
+	}
+	ds.network.mu.RLock()
+	var names []string
+	for name := range ds.network.state.Channels {
+		names = append(names, name)
+	}
+	for name := range ds.network.state.Queries {
+		names = append(names, name)
+	}
+	ds.network.mu.RUnlock()
+	var targets []irc.ChatHistoryEntry
+	for _, name := range names {
+		entries, err := ds.network.history.Query(ds.network.cfg.Name, name, history.Query{Limit: 1})
+		if err != nil || len(entries) == 0 {
+			continue
+		}
+		latest := entries[0]
+		if latest.Time.After(first) && latest.Time.Before(second) {
+			targets = append(targets, irc.ChatHistoryEntry{
+				Time: latest.Time,
+				Msg:  &irc.Message{Command: irc.CHATHISTORY, Params: []string{"TARGETS", name, latest.Time.UTC().Format(irc.ServerTimeLayout)}},
+			})
+		}
+	}
+	slices.SortFunc(targets, func(a, b irc.ChatHistoryEntry) int { return b.Time.Compare(a.Time) })
+	complete := len(targets) <= limit
+	if len(targets) > limit {
+		targets = targets[:limit]
+	}
+	ds.sendHistoryBatch("draft/chathistory-targets", "", targets, complete)
+}
+
+func (ds *DownstreamSession) sendChatHistoryFail(code, context, text string) {
+	ds.send(&irc.Message{
+		Prefix:  &irc.Prefix{Nick: "bouncer"},
+		Command: irc.FAIL,
+		Params:  []string{irc.CHATHISTORY, code, context, text},
+	})
+}
+
+func (ds *DownstreamSession) sendHistory(target string, entries []irc.ChatHistoryEntry, complete bool) {
+	ds.sendHistoryBatch("chathistory", target, entries, complete)
+}
+
+func (ds *DownstreamSession) sendHistoryBatch(batchType, target string, entries []irc.ChatHistoryEntry, complete bool) {
+	batchID := ""
+	if ds.caps[irc.CapBatch] {
+		batchID = rand.Text()
+		tags := irc.Tags{}
+		if complete {
+			tags["draft/chathistory-end"] = ""
+		}
+		params := []string{"+" + batchID, batchType}
+		if target != "" {
+			params = append(params, target)
+		}
+		ds.send(&irc.Message{
+			Tags:    tags,
+			Prefix:  &irc.Prefix{Nick: "bouncer"},
+			Command: irc.BATCH,
+			Params:  params,
+		})
+	}
+	for _, entry := range entries {
+		msg := entry.Msg.Clone()
+		if msg.Tags == nil {
+			msg.Tags = make(irc.Tags)
+		}
+		msg.Tags["time"] = entry.Time.UTC().Format(irc.ServerTimeLayout)
+		if batchID != "" {
+			msg.Tags["batch"] = batchID
+		}
+		ds.send(msg)
+	}
+	if batchID != "" {
+		ds.send(&irc.Message{
+			Prefix:  &irc.Prefix{Nick: "bouncer"},
+			Command: irc.BATCH,
+			Params:  []string{"-" + batchID},
+		})
 	}
 }
 
@@ -517,18 +776,16 @@ func (ds *DownstreamSession) replayState(n *Network) {
 		}
 		ds.sendNumeric(irc.RPL_ENDOFNAMES, chanName, "End of /NAMES list")
 
-		// History replay
-		entries, _ := n.history.Query(n.cfg.Name, chanName, history.Query{Limit: 50})
-		for _, e := range entries {
-			m := e.Msg.Clone()
-			if m.Tags == nil {
-				m.Tags = make(irc.Tags)
-			}
-			if ds.caps[irc.CapServerTime] {
-				m.Tags["time"] = e.Time.UTC().Format(time.RFC3339Nano)
-			}
-			ds.send(m)
+		if ds.caps[irc.CapChatHistory] {
+			continue
 		}
+		// History replay for clients without CHATHISTORY support.
+		stored, _ := n.history.Query(n.cfg.Name, chanName, history.Query{Limit: chatHistoryLimit})
+		entries := make([]irc.ChatHistoryEntry, len(stored))
+		for i, entry := range stored {
+			entries[i] = irc.ChatHistoryEntry{Time: entry.Time, Msg: entry.Msg}
+		}
+		ds.sendHistory(chanName, entries, true)
 	}
 }
 

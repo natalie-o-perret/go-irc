@@ -60,6 +60,8 @@ const (
 	CAP          = "CAP"
 	AUTHENTICATE = "AUTHENTICATE"
 	BATCH        = "BATCH"
+	CHATHISTORY  = "CHATHISTORY"
+	FAIL         = "FAIL"
 	SETNAME      = "SETNAME"
 	CHGHOST      = "CHGHOST"
 	ACCOUNT      = "ACCOUNT"

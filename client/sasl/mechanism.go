@@ -113,6 +113,14 @@ func NewScramSHA512(username, password string) *SCRAM {
 // Name returns the mechanism name.
 func (s *SCRAM) Name() string { return s.hashName }
 
+// Reset allows a SCRAM mechanism to be reused after reconnecting.
+func (s *SCRAM) Reset() {
+	s.state = scramStateInit
+	s.clientNonce = ""
+	s.clientFirst = ""
+	s.serverSig = nil
+}
+
 // Next drives the SCRAM state machine.
 func (s *SCRAM) Next(challenge []byte) ([]byte, bool, error) {
 	switch s.state {
@@ -124,7 +132,8 @@ func (s *SCRAM) Next(challenge []byte) ([]byte, bool, error) {
 		}
 		s.clientNonce = base64.StdEncoding.EncodeToString(nonceBuf)
 		// n,,n=user,r=nonce
-		s.clientFirst = "n=" + s.username + ",r=" + s.clientNonce
+		username := strings.NewReplacer("=", "=3D", ",", "=2C").Replace(s.username)
+		s.clientFirst = "n=" + username + ",r=" + s.clientNonce
 		msg := "n,," + s.clientFirst
 		s.state = scramStateServerFirst
 		return []byte(msg), false, nil
