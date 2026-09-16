@@ -230,10 +230,12 @@ const (
 	ERR_WASNOSUCHNICK        Numeric = 406
 	ERR_TOOMANYTARGETS       Numeric = 407
 	ERR_NOORIGIN             Numeric = 409
+	ERR_INVALIDCAPCMD        Numeric = 410
 	ERR_NORECIPIENT          Numeric = 411
 	ERR_NOTEXTTOSEND         Numeric = 412
 	ERR_NOTOPLEVEL           Numeric = 413
 	ERR_WILDTOPLEVEL         Numeric = 414
+	ERR_INPUTTOOLONG         Numeric = 417
 	ERR_MSGNEEDREGGEDNICK    Numeric = 477
 	ERR_UNKNOWNCOMMAND       Numeric = 421
 	ERR_NOMOTD               Numeric = 422

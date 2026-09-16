@@ -12,9 +12,9 @@
 -
 
 ## Checklist
+
 - [ ] Tests added / updated
 - [ ] Docs updated (if needed)
 - [ ] `BREAKING CHANGE:` footer in commit message if this is a semver major bump
 - [ ] **No dead code** (`unused` reports zero findings) -- blocks merge
 - [ ] **No warnings** (all linters report zero findings) -- blocks merge
-

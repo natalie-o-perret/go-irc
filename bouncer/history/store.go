@@ -17,10 +17,11 @@ type Entry struct {
 
 // Query describes a history query.
 type Query struct {
-	Before *time.Time
-	After  *time.Time
-	Around *time.Time
-	Limit  int
+	Before     *time.Time
+	After      *time.Time
+	Around     *time.Time
+	AfterMsgID string
+	Limit      int
 }
 
 // Store is the interface for history backends.
@@ -91,8 +92,19 @@ func (m *MemoryStore) Query(network, target string, q Query) ([]*Entry, error) {
 		limit = defaultLimit
 	}
 
+	start := 0
+	if q.AfterMsgID != "" {
+		start = len(all)
+		for i, entry := range all {
+			if entry.Msg.Tags["msgid"] == q.AfterMsgID {
+				start = i + 1
+				break
+			}
+		}
+	}
+
 	var result []*Entry
-	for _, e := range all {
+	for _, e := range all[start:] {
 		if q.Before != nil && !e.Time.Before(*q.Before) {
 			continue
 		}

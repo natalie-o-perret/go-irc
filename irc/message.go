@@ -9,7 +9,6 @@ import (
 	"strings"
 )
 
-
 // Tags holds IRCv3 message tags.  A missing value is represented as an empty
 // string; a tag that is present without a value is also an empty string.
 type Tags map[string]string
@@ -99,6 +98,22 @@ func (m *Message) String() string {
 	return Format(m)
 }
 
+// InputTooLong reports whether a client message exceeds IRC framing limits.
+func InputTooLong(raw string) bool {
+	raw = strings.TrimRight(raw, "\r\n")
+	if strings.HasPrefix(raw, "@") {
+		space := strings.IndexByte(raw, ' ')
+		if space < 0 {
+			return len(raw)-1 > 4094
+		}
+		if space-1 > 4094 {
+			return true
+		}
+		raw = raw[space+1:]
+	}
+	return len(raw) > 510
+}
+
 // Parse decodes a single raw IRC line (with or without CRLF) into a Message.
 // It handles IRCv3 message tags, the optional :prefix, command, and parameters.
 func Parse(raw string) (*Message, error) {
@@ -164,19 +179,24 @@ func Parse(raw string) (*Message, error) {
 func Format(m *Message) string {
 	var buf bytes.Buffer
 
-	// tags
+	// Server tags must precede client-only tags.
 	if len(m.Tags) > 0 {
 		buf.WriteByte('@')
 		first := true
-		for k, v := range m.Tags {
-			if !first {
-				buf.WriteByte(';')
-			}
-			first = false
-			buf.WriteString(k)
-			if v != "" {
-				buf.WriteByte('=')
-				buf.WriteString(escapeTagValue(v))
+		for _, clientOnly := range []bool{false, true} {
+			for k, v := range m.Tags {
+				if strings.HasPrefix(k, "+") != clientOnly {
+					continue
+				}
+				if !first {
+					buf.WriteByte(';')
+				}
+				first = false
+				buf.WriteString(k)
+				if v != "" {
+					buf.WriteByte('=')
+					buf.WriteString(escapeTagValue(v))
+				}
 			}
 		}
 		buf.WriteByte(' ')
@@ -254,13 +274,31 @@ var tagEscaper = strings.NewReplacer(
 	"\n", `\n`,
 )
 
-var tagUnescaper = strings.NewReplacer(
-	`\:`, ";",
-	`\s`, " ",
-	`\\`, `\`,
-	`\r`, "\r",
-	`\n`, "\n",
-)
+func escapeTagValue(s string) string { return tagEscaper.Replace(s) }
 
-func escapeTagValue(s string) string   { return tagEscaper.Replace(s) }
-func unescapeTagValue(s string) string { return tagUnescaper.Replace(s) }
+func unescapeTagValue(s string) string {
+	var out strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' {
+			out.WriteByte(s[i])
+			continue
+		}
+		i++
+		if i == len(s) {
+			break
+		}
+		switch s[i] {
+		case ':':
+			out.WriteByte(';')
+		case 's':
+			out.WriteByte(' ')
+		case 'r':
+			out.WriteByte('\r')
+		case 'n':
+			out.WriteByte('\n')
+		default:
+			out.WriteByte(s[i])
+		}
+	}
+	return out.String()
+}
