@@ -38,10 +38,11 @@ type Membership struct {
 
 // Session is a single connected IRC client managed by the server.
 type Session struct {
-	conn     net.Conn
-	writer   *bufio.Writer
-	server   *Server
-	writerMu sync.Mutex
+	conn      net.Conn
+	writer    *bufio.Writer
+	server    *Server
+	writerMu  sync.Mutex
+	historyMu sync.RWMutex
 
 	// Registration fields
 	nick     string
@@ -52,15 +53,11 @@ type Session struct {
 	away     string
 	modes    *mode.Set
 	caps     map[string]bool
+	history  map[string][]*historyEntry
 	state    SessionState
 
 	// CAP negotiation
-	capLSReceived bool
-	capVersion    int // 302 or 0
-
-	// SASL
-	saslMech string
-	saslDone bool
+	capVersion int // 302 or 0
 
 	// Timing
 	idleAt   time.Time
@@ -79,10 +76,37 @@ func newSession(conn net.Conn, srv *Server) *Session {
 		host:     host,
 		modes:    mode.New(),
 		caps:     make(map[string]bool),
+		history:  make(map[string][]*historyEntry),
 		state:    StatePreReg,
 		idleAt:   time.Now(),
 		signOnAt: time.Now(),
 	}
+}
+
+func (s *Session) appendHistory(target string, at time.Time, msg *irc.Message) {
+	key := strings.ToLower(target)
+	s.historyMu.Lock()
+	defer s.historyMu.Unlock()
+	s.history[key] = append(s.history[key], &historyEntry{time: at, msg: msg.Clone()})
+	if len(s.history[key]) > chatHistoryLimit {
+		s.history[key] = s.history[key][len(s.history[key])-chatHistoryLimit:]
+	}
+}
+
+func (s *Session) historySnapshot(target string) []*historyEntry {
+	s.historyMu.RLock()
+	defer s.historyMu.RUnlock()
+	return append([]*historyEntry(nil), s.history[strings.ToLower(target)]...)
+}
+
+func (s *Session) historyTargets() map[string][]*historyEntry {
+	s.historyMu.RLock()
+	defer s.historyMu.RUnlock()
+	out := make(map[string][]*historyEntry, len(s.history))
+	for target, entries := range s.history {
+		out[target] = append([]*historyEntry(nil), entries...)
+	}
+	return out
 }
 
 // Prefix returns the full nick!user@host prefix for this session.
@@ -92,9 +116,30 @@ func (s *Session) Prefix() *irc.Prefix {
 
 // Send writes a message to this session.
 func (s *Session) Send(msg *irc.Message) {
+	if msg.Command == irc.TAGMSG && !s.capEnabled(irc.CapMessageTags) {
+		return
+	}
 	s.writerMu.Lock()
 	defer s.writerMu.Unlock()
-	line := msg.String() + "\r\n"
+	out := msg
+	if len(msg.Tags) > 0 {
+		out = msg.Clone()
+		for tag := range out.Tags {
+			cap := irc.CapMessageTags
+			switch tag {
+			case "time":
+				cap = irc.CapServerTime
+			case "batch":
+				cap = irc.CapBatch
+			case "draft/chathistory-end":
+				cap = irc.CapChatHistory
+			}
+			if !s.capEnabled(cap) {
+				delete(out.Tags, tag)
+			}
+		}
+	}
+	line := out.String() + "\r\n"
 	_, _ = s.writer.WriteString(line)
 	_ = s.writer.Flush()
 }
@@ -106,7 +151,11 @@ func (s *Session) Sendf(cmd string, params ...string) {
 
 // SendNumeric sends an IRC numeric reply.
 func (s *Session) SendNumeric(n irc.Numeric, params ...string) {
-	all := append([]string{s.nick}, params...)
+	nick := s.nick
+	if nick == "" {
+		nick = "*"
+	}
+	all := append([]string{nick}, params...)
 	s.Send(&irc.Message{
 		Prefix:  &irc.Prefix{Nick: s.server.cfg.Name},
 		Command: n.String(),
@@ -210,6 +259,12 @@ type Channel struct {
 
 	mu      sync.RWMutex
 	members map[string]*Membership // lowercase nick -> Membership
+	history []*historyEntry
+}
+
+type historyEntry struct {
+	time time.Time
+	msg  *irc.Message
 }
 
 func newChannel(name string) *Channel {
@@ -219,6 +274,21 @@ func newChannel(name string) *Channel {
 		createdAt: time.Now(),
 		members:   make(map[string]*Membership),
 	}
+}
+
+func (ch *Channel) appendHistory(at time.Time, msg *irc.Message) {
+	ch.mu.Lock()
+	defer ch.mu.Unlock()
+	ch.history = append(ch.history, &historyEntry{time: at, msg: msg.Clone()})
+	if len(ch.history) > chatHistoryLimit {
+		ch.history = ch.history[len(ch.history)-chatHistoryLimit:]
+	}
+}
+
+func (ch *Channel) historySnapshot() []*historyEntry {
+	ch.mu.RLock()
+	defer ch.mu.RUnlock()
+	return append([]*historyEntry(nil), ch.history...)
 }
 
 // AddMember adds a session to the channel.
@@ -537,6 +607,10 @@ func (srv *Server) handleSession(s *Session) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		if irc.InputTooLong(line) {
+			s.SendNumeric(irc.ERR_INPUTTOOLONG, "Input line was too long")
+			continue
+		}
 		msg, err := irc.Parse(line)
 		if err != nil {
 			continue
@@ -613,37 +687,37 @@ func (srv *Server) isupport() []string {
 		"INVEX",
 		"EXCEPTS",
 		"CALLERID",
+		"CHATHISTORY=50",
+		"MSGREFTYPES=timestamp,msgid",
 	}
 }
 
 // supportedCaps returns the set of caps this server supports.
 func (srv *Server) supportedCaps() map[string]string {
 	caps := map[string]string{
-		irc.CapSASL:            "PLAIN,EXTERNAL",
-		irc.CapServerTime:      "",
-		irc.CapMessageTags:     "",
-		irc.CapBatch:           "",
-		irc.CapLabeledResponse: "",
-		irc.CapEchoMessage:     "",
-		irc.CapMultiPrefix:     "",
-		irc.CapAwayNotify:      "",
-		irc.CapExtendedJoin:    "",
-		irc.CapChghost:         "",
-		irc.CapSetname:         "",
-		irc.CapAccountTag:      "",
-		irc.CapCapNotify:       "",
-		irc.CapUserHostInNames: "",
-		irc.CapInviteNotify:    "",
-		irc.CapAccountNotify:   "",
+		irc.CapServerTime:   "",
+		irc.CapMessageTags:  "",
+		irc.CapBatch:        "",
+		irc.CapChatHistory:  "",
+		irc.CapEchoMessage:  "",
+		irc.CapMultiPrefix:  "",
+		irc.CapAwayNotify:   "",
+		irc.CapExtendedJoin: "",
+		irc.CapSetname:      "",
+		irc.CapCapNotify:    "",
+		irc.CapInviteNotify: "",
 	}
 	for _, c := range srv.cfg.Caps {
 		k, v, _ := strings.Cut(c, "=")
+		if k == irc.CapSASL {
+			continue
+		}
 		caps[k] = v
 	}
 	return caps
 }
 
 // serverTime returns the current time in IRCv3 server-time format.
-func serverTime() string {
-	return time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
-}
+const chatHistoryLimit = 50
+
+func serverTime(t time.Time) string { return t.UTC().Format(irc.ServerTimeLayout) }

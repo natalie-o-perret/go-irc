@@ -1,7 +1,10 @@
 package server
 
 import (
+	"crypto/rand"
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,9 +20,6 @@ func (srv *Server) dispatch(s *Session, msg *irc.Message) {
 	switch cmd {
 	case irc.CAP:
 		srv.handleCAP(s, msg)
-		return
-	case irc.AUTHENTICATE:
-		srv.handleAuthenticate(s, msg)
 		return
 	case irc.PASS:
 		srv.handlePass(s, msg)
@@ -72,6 +72,8 @@ func (srv *Server) dispatch(s *Session, msg *irc.Message) {
 		srv.handlePrivmsg(s, msg, true)
 	case irc.TAGMSG:
 		srv.handleTagmsg(s, msg)
+	case irc.CHATHISTORY:
+		srv.handleChatHistory(s, msg)
 
 	// Queries
 	case irc.WHO:
@@ -223,14 +225,12 @@ func (srv *Server) tryRegister(s *Session) {
 	if s.state == StateRegistered {
 		return
 	}
-	// Check if CAP negotiation is in progress
-	if s.capLSReceived && s.state == StateCapNeg {
+	if s.state == StateCapNeg {
 		return // wait for CAP END
 	}
 	if s.nick == "" || s.user == "" {
 		return
 	}
-
 
 	if err := srv.sessions.Add(s); err != nil {
 		s.SendNumeric(irc.ERR_NICKNAMEINUSE, s.nick, "Nickname is already in use")
@@ -268,88 +268,79 @@ func (srv *Server) tryRegister(s *Session) {
 
 func (srv *Server) handleCAP(s *Session, msg *irc.Message) {
 	if len(msg.Params) < 1 {
+		s.SendNumeric(irc.ERR_INVALIDCAPCMD, "*", "Invalid CAP command")
 		return
 	}
-
-	// Reparse: CAP [nick] subcmd [params]
-	// params[0] might be nick or subcmd
-	params := msg.Params
-	subCmd := strings.ToUpper(params[0])
-	var subArg string
-	if len(params) >= 2 {
-		// params[0] could be "*" (the nick placeholder)
-		if params[0] == "*" || params[0] == s.nick {
-			subCmd = strings.ToUpper(params[1])
-			if len(params) >= 3 {
-				subArg = params[2]
-			}
-		} else {
-			if len(params) >= 2 {
-				subArg = params[1]
-			}
-		}
+	subCmd := strings.ToUpper(msg.Params[0])
+	subArg := ""
+	if len(msg.Params) >= 2 {
+		subArg = msg.Params[1]
 	}
 
 	supported := srv.supportedCaps()
 
 	switch subCmd {
 	case irc.CapLS:
-		s.capLSReceived = true
 		if s.state != StateRegistered {
 			s.state = StateCapNeg
 		}
-		if subArg == "302" {
-			s.capVersion = 302
+		if version, err := strconv.Atoi(subArg); err == nil && version >= 302 {
+			s.capVersion = version
+			s.caps[irc.CapCapNotify] = true
 		}
 
-		// Build LS response
 		var parts []string
 		for k, v := range supported {
-			if v != "" {
+			if s.capVersion >= 302 && v != "" {
 				parts = append(parts, k+"="+v)
 			} else {
 				parts = append(parts, k)
 			}
 		}
-		capList := strings.Join(parts, " ")
-
-		srv.sendCAP(s, irc.CapLS, capList)
+		slices.Sort(parts)
+		srv.sendCAP(s, irc.CapLS, strings.Join(parts, " "))
 
 	case irc.CapLIST:
 		var enabled []string
 		for cap := range s.caps {
-			enabled = append(enabled, cap)
+			if s.caps[cap] {
+				enabled = append(enabled, cap)
+			}
 		}
+		slices.Sort(enabled)
 		srv.sendCAP(s, irc.CapLIST, strings.Join(enabled, " "))
 
 	case irc.CapREQ:
+		if s.state != StateRegistered {
+			s.state = StateCapNeg
+		}
 		req := strings.TrimPrefix(subArg, ":")
-		var ack, nak []string
+		for _, cap := range strings.Fields(req) {
+			capName := strings.TrimPrefix(cap, "-")
+			if _, ok := supported[capName]; !ok {
+				srv.sendCAP(s, irc.CapNAK, req)
+				return
+			}
+		}
 		for _, cap := range strings.Fields(req) {
 			disable := strings.HasPrefix(cap, "-")
 			capName := strings.TrimPrefix(cap, "-")
-			if _, ok := supported[capName]; ok {
-				if disable {
-					delete(s.caps, capName)
-				} else {
-					s.caps[capName] = true
-				}
-				ack = append(ack, cap)
-			} else {
-				nak = append(nak, cap)
+			if disable && (capName != irc.CapCapNotify || s.capVersion < 302) {
+				delete(s.caps, capName)
+			} else if !disable {
+				s.caps[capName] = true
 			}
 		}
-		if len(nak) > 0 {
-			srv.sendCAP(s, irc.CapNAK, req)
-		} else {
-			srv.sendCAP(s, irc.CapACK, strings.Join(ack, " "))
-		}
+		srv.sendCAP(s, irc.CapACK, req)
 
 	case irc.CapEND:
 		if s.state == StateCapNeg {
 			s.state = StatePreReg
 		}
 		srv.tryRegister(s)
+
+	default:
+		s.SendNumeric(irc.ERR_INVALIDCAPCMD, subCmd, "Invalid CAP command")
 	}
 }
 
@@ -358,41 +349,11 @@ func (srv *Server) sendCAP(s *Session, subCmd, value string) {
 	if nick == "" {
 		nick = "*"
 	}
-	params := []string{nick, subCmd}
-	if value != "" {
-		params = append(params, value)
-	}
 	s.Send(&irc.Message{
 		Prefix:  &irc.Prefix{Nick: srv.cfg.Name},
 		Command: irc.CAP,
-		Params:  params,
+		Params:  []string{nick, subCmd, value},
 	})
-}
-
-// ---------------------------------------------------------------------------
-// AUTHENTICATE (minimal SASL PLAIN support)
-// ---------------------------------------------------------------------------
-
-func (srv *Server) handleAuthenticate(s *Session, msg *irc.Message) {
-	if len(msg.Params) == 0 {
-		return
-	}
-	if msg.Params[0] == "PLAIN" {
-		s.saslMech = "PLAIN"
-		s.Send(&irc.Message{
-			Prefix:  &irc.Prefix{Nick: srv.cfg.Name},
-			Command: irc.AUTHENTICATE,
-			Params:  []string{"+"},
-		})
-		return
-	}
-	if s.saslMech == "PLAIN" {
-		// Accept any credentials (no auth backend — extend as needed)
-		s.saslDone = true
-		s.SendNumeric(irc.RPL_SASLSUCCESS, "Authentication successful")
-		return
-	}
-	s.SendNumeric(irc.ERR_SASLFAIL, "Authentication failed")
 }
 
 // ---------------------------------------------------------------------------
@@ -412,9 +373,17 @@ func (srv *Server) handlePrivmsg(s *Session, msg *irc.Message, notice bool) {
 		cmd = irc.NOTICE
 	}
 
-	tags := irc.Tags{}
-	if s.capEnabled(irc.CapServerTime) {
-		tags["time"] = serverTime()
+	now := time.Now().UTC()
+	tags := irc.Tags{
+		"msgid": rand.Text(),
+		"time":  serverTime(now),
+	}
+	if s.capEnabled(irc.CapMessageTags) {
+		for tag, value := range msg.Tags {
+			if strings.HasPrefix(tag, "+") {
+				tags[tag] = value
+			}
+		}
 	}
 
 	outMsg := &irc.Message{
@@ -424,6 +393,70 @@ func (srv *Server) handlePrivmsg(s *Session, msg *irc.Message, notice bool) {
 		Params:  []string{target, text},
 	}
 
+	if strings.HasPrefix(target, "#") || strings.HasPrefix(target, "&") {
+		ch, ok := srv.channels.Get(target)
+		if !ok {
+			s.SendNumeric(irc.ERR_NOSUCHNICK, target, "No such nick/channel")
+			return
+		}
+		if !ch.HasMember(s.nick) && ch.modes.Has('n') {
+			s.SendNumeric(irc.ERR_CANNOTSENDTOCHAN, target, "Cannot send to channel")
+			return
+		}
+		if ch.modes.Has('m') {
+			m := ch.GetMembership(s.nick)
+			if m == nil || m.Prefix == "" {
+				s.SendNumeric(irc.ERR_CANNOTSENDTOCHAN, target, "Cannot send to channel (+m)")
+				return
+			}
+		}
+		ch.appendHistory(now, outMsg)
+		ch.Broadcast(outMsg, s)
+		if s.capEnabled(irc.CapEchoMessage) {
+			s.Send(outMsg)
+		}
+	} else {
+		dest, ok := srv.sessions.Get(target)
+		if !ok {
+			s.SendNumeric(irc.ERR_NOSUCHNICK, target, "No such nick/channel")
+			return
+		}
+		s.appendHistory(dest.nick, now, outMsg)
+		dest.appendHistory(s.nick, now, outMsg)
+		dest.Send(outMsg)
+		if s.capEnabled(irc.CapEchoMessage) {
+			s.Send(outMsg)
+		}
+		if dest.away != "" && !notice {
+			s.SendNumeric(irc.RPL_AWAY, target, dest.away)
+		}
+	}
+}
+
+func (srv *Server) handleTagmsg(s *Session, msg *irc.Message) {
+	if len(msg.Params) < 1 || msg.Params[0] == "" {
+		s.SendNumeric(irc.ERR_NORECIPIENT, "No recipient given (TAGMSG)")
+		return
+	}
+	if !s.capEnabled(irc.CapMessageTags) {
+		return
+	}
+	target := msg.Params[0]
+	tags := irc.Tags{
+		"msgid": rand.Text(),
+		"time":  serverTime(time.Now()),
+	}
+	for tag, value := range msg.Tags {
+		if strings.HasPrefix(tag, "+") {
+			tags[tag] = value
+		}
+	}
+	outMsg := &irc.Message{
+		Tags:    tags,
+		Prefix:  s.Prefix(),
+		Command: irc.TAGMSG,
+		Params:  []string{target},
+	}
 	if strings.HasPrefix(target, "#") || strings.HasPrefix(target, "&") {
 		ch, ok := srv.channels.Get(target)
 		if !ok {
@@ -455,34 +488,174 @@ func (srv *Server) handlePrivmsg(s *Session, msg *irc.Message, notice bool) {
 		if s.capEnabled(irc.CapEchoMessage) {
 			s.Send(outMsg)
 		}
-		if dest.away != "" && !notice {
-			s.SendNumeric(irc.RPL_AWAY, target, dest.away)
-		}
 	}
 }
 
-func (srv *Server) handleTagmsg(s *Session, msg *irc.Message) {
-	if len(msg.Params) < 1 {
+func (srv *Server) handleChatHistory(s *Session, msg *irc.Message) {
+	if !s.capEnabled(irc.CapChatHistory) {
+		s.SendNumeric(irc.ERR_UNKNOWNCOMMAND, irc.CHATHISTORY, "Unknown command")
 		return
 	}
-	target := msg.Params[0]
-	outMsg := &irc.Message{
-		Tags:    msg.Tags,
-		Prefix:  s.Prefix(),
-		Command: irc.TAGMSG,
-		Params:  []string{target},
+	subcommand := strings.ToUpper(msg.Param(0))
+	if subcommand == "TARGETS" {
+		srv.handleChatHistoryTargets(s, msg)
+		return
 	}
+	expected := 4
+	if subcommand == "BETWEEN" {
+		expected = 5
+	}
+	if len(msg.Params) != expected {
+		srv.sendChatHistoryFail(s, "INVALID_PARAMS", msg.Param(0), "Invalid parameters")
+		return
+	}
+
+	target := msg.Params[1]
+	limit, err := strconv.Atoi(msg.Params[len(msg.Params)-1])
+	if err != nil || limit <= 0 {
+		srv.sendChatHistoryFail(s, "INVALID_PARAMS", msg.Params[0], "Invalid limit")
+		return
+	}
+	if limit > chatHistoryLimit {
+		limit = chatHistoryLimit
+	}
+	canonicalTarget := target
+	var stored []*historyEntry
 	if strings.HasPrefix(target, "#") || strings.HasPrefix(target, "&") {
 		ch, ok := srv.channels.Get(target)
-		if !ok {
+		if !ok || !ch.HasMember(s.nick) {
+			srv.sendChatHistoryFail(s, "INVALID_TARGET", msg.Params[0], "Messages could not be retrieved")
 			return
 		}
-		ch.Broadcast(outMsg, s)
+		canonicalTarget = ch.name
+		stored = ch.historySnapshot()
 	} else {
-		if dest, ok := srv.sessions.Get(target); ok {
-			dest.Send(outMsg)
+		stored = s.historySnapshot(target)
+	}
+	entries := make([]irc.ChatHistoryEntry, len(stored))
+	for i, entry := range stored {
+		entries[i] = irc.ChatHistoryEntry{Time: entry.time, Msg: entry.msg}
+	}
+	entries, complete, err := irc.SelectChatHistory(entries, subcommand, msg.Params[2:len(msg.Params)-1], limit)
+	if err != nil {
+		code := "INVALID_PARAMS"
+		if strings.Contains(err.Error(), "unsupported") {
+			code = "INVALID_MSGREFTYPE"
+		}
+		srv.sendChatHistoryFail(s, code, msg.Params[0], err.Error())
+		return
+	}
+	srv.sendChatHistory(s, canonicalTarget, entries, complete)
+}
+
+func (srv *Server) handleChatHistoryTargets(s *Session, msg *irc.Message) {
+	if len(msg.Params) != 4 {
+		srv.sendChatHistoryFail(s, "INVALID_PARAMS", msg.Param(0), "Invalid parameters")
+		return
+	}
+	first, err := time.Parse(irc.ServerTimeLayout, strings.TrimPrefix(msg.Params[1], "timestamp="))
+	if err != nil || !strings.HasPrefix(msg.Params[1], "timestamp=") {
+		srv.sendChatHistoryFail(s, "INVALID_PARAMS", msg.Params[0], "Invalid timestamp")
+		return
+	}
+	second, err := time.Parse(irc.ServerTimeLayout, strings.TrimPrefix(msg.Params[2], "timestamp="))
+	if err != nil || !strings.HasPrefix(msg.Params[2], "timestamp=") {
+		srv.sendChatHistoryFail(s, "INVALID_PARAMS", msg.Params[0], "Invalid timestamp")
+		return
+	}
+	limit, err := strconv.Atoi(msg.Params[3])
+	if err != nil || limit <= 0 {
+		srv.sendChatHistoryFail(s, "INVALID_PARAMS", msg.Params[0], "Invalid limit")
+		return
+	}
+	if first.After(second) {
+		first, second = second, first
+	}
+	var targets []irc.ChatHistoryEntry
+	for _, ch := range srv.channels.All() {
+		if !ch.HasMember(s.nick) {
+			continue
+		}
+		entries := ch.historySnapshot()
+		if len(entries) == 0 {
+			continue
+		}
+		latest := entries[len(entries)-1]
+		if latest.time.After(first) && latest.time.Before(second) {
+			targets = append(targets, irc.ChatHistoryEntry{
+				Time: latest.time,
+				Msg:  &irc.Message{Command: irc.CHATHISTORY, Params: []string{"TARGETS", ch.name, serverTime(latest.time)}},
+			})
 		}
 	}
+	for target, entries := range s.historyTargets() {
+		if len(entries) == 0 {
+			continue
+		}
+		latest := entries[len(entries)-1]
+		if latest.time.After(first) && latest.time.Before(second) {
+			targets = append(targets, irc.ChatHistoryEntry{
+				Time: latest.time,
+				Msg:  &irc.Message{Command: irc.CHATHISTORY, Params: []string{"TARGETS", target, serverTime(latest.time)}},
+			})
+		}
+	}
+	slices.SortFunc(targets, func(a, b irc.ChatHistoryEntry) int { return b.Time.Compare(a.Time) })
+	complete := len(targets) <= limit
+	if len(targets) > limit {
+		targets = targets[:limit]
+	}
+	srv.sendHistoryBatch(s, "draft/chathistory-targets", "", targets, complete)
+}
+
+func (srv *Server) sendChatHistory(s *Session, target string, entries []irc.ChatHistoryEntry, complete bool) {
+	srv.sendHistoryBatch(s, "chathistory", target, entries, complete)
+}
+
+func (srv *Server) sendHistoryBatch(s *Session, batchType, target string, entries []irc.ChatHistoryEntry, complete bool) {
+	batchID := ""
+	if s.capEnabled(irc.CapBatch) {
+		batchID = rand.Text()
+		tags := irc.Tags{}
+		if complete {
+			tags["draft/chathistory-end"] = ""
+		}
+		params := []string{"+" + batchID, batchType}
+		if target != "" {
+			params = append(params, target)
+		}
+		s.Send(&irc.Message{
+			Tags:    tags,
+			Prefix:  &irc.Prefix{Nick: srv.cfg.Name},
+			Command: irc.BATCH,
+			Params:  params,
+		})
+	}
+	for _, entry := range entries {
+		out := entry.Msg.Clone()
+		if batchID != "" {
+			if out.Tags == nil {
+				out.Tags = make(irc.Tags)
+			}
+			out.Tags["batch"] = batchID
+		}
+		s.Send(out)
+	}
+	if batchID != "" {
+		s.Send(&irc.Message{
+			Prefix:  &irc.Prefix{Nick: srv.cfg.Name},
+			Command: irc.BATCH,
+			Params:  []string{"-" + batchID},
+		})
+	}
+}
+
+func (srv *Server) sendChatHistoryFail(s *Session, code, subcommand, text string) {
+	s.Send(&irc.Message{
+		Prefix:  &irc.Prefix{Nick: srv.cfg.Name},
+		Command: irc.FAIL,
+		Params:  []string{irc.CHATHISTORY, code, subcommand, text},
+	})
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 package irc_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/natalie-o-perret/go-irc/irc"
@@ -104,6 +105,36 @@ func TestFormatRoundtrip(t *testing.T) {
 		if msg2.Command != msg.Command {
 			t.Errorf("command mismatch after round-trip: %q vs %q", msg.Command, msg2.Command)
 		}
+	}
+}
+
+func TestInputTooLong(t *testing.T) {
+	if irc.InputTooLong("@" + strings.Repeat("a", 4094) + " PING x") {
+		t.Error("4094 bytes of tag data rejected")
+	}
+	if !irc.InputTooLong("@" + strings.Repeat("a", 4095) + " PING x") {
+		t.Error("4095 bytes of tag data accepted")
+	}
+	if !irc.InputTooLong(strings.Repeat("a", 511)) {
+		t.Error("511-byte message accepted")
+	}
+}
+
+func TestTagEscaping(t *testing.T) {
+	msg := irc.MustParse(`@tag=semi\:space\sback\\slash\r\nunknown\qtrailing\ PRIVMSG nick :hi`)
+	if got, want := msg.Tags["tag"], "semi;space back\\slash\r\nunknownqtrailing"; got != want {
+		t.Fatalf("tag: got %q want %q", got, want)
+	}
+}
+
+func TestServerTagsFormatBeforeClientTags(t *testing.T) {
+	line := (&irc.Message{
+		Tags:    irc.Tags{"+reply": "parent", "msgid": "child"},
+		Command: irc.PRIVMSG,
+		Params:  []string{"nick", "hi"},
+	}).String()
+	if !strings.HasPrefix(line, "@msgid=child;+reply=parent ") {
+		t.Fatalf("unexpected tag order: %q", line)
 	}
 }
 
